@@ -1,9 +1,30 @@
 
 import React, { useState, useRef } from 'react';
+import ZenLoader from './ZenLoader';
+import PaymentAssetSelector, { type PaymentAssetOption } from './PaymentAssetSelector';
+import { parseDisplayAmountToMinorUnits } from '../chain/paymentAmount';
 
-const EmbroideryDetail: React.FC = () => {
+type EmbroideryDetailProps = {
+  paymentAssets: PaymentAssetOption[];
+  defaultInputCoinType?: string;
+  defaultInputAmount?: string;
+  onBuyEmbroidery?: (params: { inputCoinType: string; inputAmount: bigint }) => Promise<void>;
+};
+
+const EmbroideryDetail: React.FC<EmbroideryDetailProps> = ({
+  paymentAssets,
+  defaultInputCoinType,
+  defaultInputAmount = '0.1',
+  onBuyEmbroidery,
+}) => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [showMagnifier, setShowMagnifier] = useState(false);
+  const [selectedInputCoinType, setSelectedInputCoinType] = useState(
+    defaultInputCoinType ?? paymentAssets[0]?.coinType ?? '',
+  );
+  const [inputAmount, setInputAmount] = useState(defaultInputAmount);
+  const [isBuying, setIsBuying] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const highResImage = "https://images.unsplash.com/photo-1610444583731-9e151d0407d9?q=100&w=3000&auto=format&fit=crop";
 
@@ -15,8 +36,35 @@ const EmbroideryDetail: React.FC = () => {
     setMousePos({ x, y });
   };
 
+  const handleBuy = async () => {
+    setBuyError(null);
+    setIsBuying(true);
+    window.dispatchEvent(new CustomEvent('linage-buy-start'));
+    try {
+      if (!onBuyEmbroidery) {
+        throw new Error('Embroidery listing is not configured yet.');
+      }
+      const selectedAsset = paymentAssets.find((asset) => asset.coinType === selectedInputCoinType);
+      if (!selectedAsset) {
+        throw new Error('Selected payment asset is not available.');
+      }
+      const parsedAmount = parseDisplayAmountToMinorUnits(inputAmount, selectedAsset.decimals);
+      await onBuyEmbroidery({
+        inputCoinType: selectedAsset.coinType,
+        inputAmount: parsedAmount,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBuyError(message);
+    } finally {
+      setIsBuying(false);
+      window.dispatchEvent(new CustomEvent('linage-buy-end'));
+    }
+  };
+
   return (
     <div className="pt-24 min-h-screen bg-[#FAF9F6] animate-fade-in">
+      <ZenLoader isLoading={isBuying} message="SETTLING EMBROIDERY LISTING ON CHAIN..." />
       <div 
         ref={containerRef}
         onMouseMove={handleMouseMove}
@@ -75,6 +123,31 @@ const EmbroideryDetail: React.FC = () => {
           <p className="serif-font text-2xl">Eternal Proof</p>
           <p className="text-sm opacity-50 leading-loose">Linage anchors this mastery to the Sui network, ensuring the artist's signature is as immortal as the tradition itself.</p>
         </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto pb-24 px-12 space-y-4">
+        {buyError && (
+          <p className="text-[11px] tracking-[0.15em] text-[#A62C2B] uppercase">
+            Purchase failed: {buyError}
+          </p>
+        )}
+        <PaymentAssetSelector
+          assets={paymentAssets}
+          selectedCoinType={selectedInputCoinType}
+          amount={inputAmount}
+          onCoinTypeChange={setSelectedInputCoinType}
+          onAmountChange={setInputAmount}
+          disabled={isBuying}
+        />
+        <button
+          data-testid="embroidery-buy-button"
+          onClick={handleBuy}
+          disabled={isBuying || !onBuyEmbroidery}
+          className="w-full bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.45em] px-6 py-4 uppercase shadow-md hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ clipPath: 'polygon(2% 4%, 98% 2%, 97% 96%, 3% 98%)' }}
+        >
+          购绣品 / Buy Listing
+        </button>
       </div>
     </div>
   );

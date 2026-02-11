@@ -10,7 +10,10 @@ import EmbroideryDetail from './components/EmbroideryDetail';
 import TeaDetail, { TEA_REGIONS } from './components/TeaDetail';
 import JourneyPage from './components/JourneyPage';
 import ExperiencePage, { EXPERIENCE_DATA } from './components/ExperiencePage';
+import type { PaymentAssetOption } from './components/PaymentAssetSelector';
 import { HeritageItem, ActivePage } from './types';
+import { useLinageChain } from './hooks/useLinageChain';
+import { SUI_COIN_TYPE } from './chain/runtimeConfig';
 
 const HERITAGE_DATA: HeritageItem[] = [
   {
@@ -39,15 +42,25 @@ const HERITAGE_DATA: HeritageItem[] = [
   }
 ];
 
+const TEA_LISTING_ID = import.meta.env.VITE_LINAGE_TEA_LISTING_ID;
+const EMBROIDERY_LISTING_ID = import.meta.env.VITE_LINAGE_EMBROIDERY_LISTING_ID;
+const USDC_COIN_TYPE = import.meta.env.VITE_LINAGE_USDC_COIN_TYPE;
+const DEFAULT_PAYMENT_AMOUNT = import.meta.env.VITE_LINAGE_DEFAULT_PAYMENT_AMOUNT || '0.1';
+const DEFAULT_INPUT_COIN_TYPE = import.meta.env.VITE_LINAGE_DEFAULT_INPUT_COIN_TYPE || SUI_COIN_TYPE;
+
 const App: React.FC = () => {
+  const { isConnected, address, connect, disconnect, mintTeaCollectibleUsdc, buyListingUsdc, formatError } = useLinageChain();
   const [currentPage, setCurrentPage] = useState<ActivePage>('Home');
   const [isLoading, setIsLoading] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState("");
-  const [isConnected, setIsConnected] = useState(false);
-  const [address, setAddress] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
   const [savedExperienceIds, setSavedExperienceIds] = useState<string[]>([]);
   const [collectedTeaIds, setCollectedTeaIds] = useState<string[]>([]);
+  const paymentAssets: PaymentAssetOption[] = [
+    { label: 'SUI', coinType: SUI_COIN_TYPE, decimals: 9 },
+    ...(USDC_COIN_TYPE
+      ? [{ label: 'USDC', coinType: USDC_COIN_TYPE, decimals: 6 } as PaymentAssetOption]
+      : []),
+  ];
 
   useEffect(() => {
     const savedExp = localStorage.getItem('linage_saved_experiences');
@@ -75,20 +88,20 @@ const App: React.FC = () => {
   };
 
   const handleConnect = async () => {
-    if (isConnected) {
-      setIsConnected(false);
-      setAddress("");
-      navigateTo('Home');
-      return;
-    }
-    setLoaderMessage("SUMMONING SCROLLS...");
+    setLoaderMessage(isConnected ? "ROLLING BACK SEAL..." : "SUMMONING WALLET...");
     setIsLoading(true);
-    await new Promise(r => setTimeout(r, 2000));
-    setIsLoading(false);
-    setIsConnected(true);
-    setAddress("0x71C765...d897");
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 4000);
+    try {
+      if (isConnected) {
+        await disconnect();
+        navigateTo('Home');
+      } else {
+        await connect();
+      }
+    } catch (error) {
+      window.alert(`Wallet action failed: ${formatError(error)}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const toggleSaveExperience = (id: string) => {
@@ -107,12 +120,51 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (currentPage) {
       case 'Embroidery':
-        return <EmbroideryDetail />;
+        return (
+          <EmbroideryDetail
+            paymentAssets={paymentAssets}
+            defaultInputCoinType={DEFAULT_INPUT_COIN_TYPE}
+            defaultInputAmount={DEFAULT_PAYMENT_AMOUNT}
+            onBuyEmbroidery={
+              EMBROIDERY_LISTING_ID
+                ? async ({ inputCoinType, inputAmount }) => {
+                    await buyListingUsdc({
+                      listingId: EMBROIDERY_LISTING_ID,
+                      inputCoinType,
+                      inputAmount,
+                    });
+                  }
+                : undefined
+            }
+          />
+        );
       case 'Tea':
         return (
           <TeaDetail 
             collectedTeaIds={collectedTeaIds} 
             onUpdateCollection={updateTeaCollection} 
+            paymentAssets={paymentAssets}
+            defaultInputCoinType={DEFAULT_INPUT_COIN_TYPE}
+            defaultInputAmount={DEFAULT_PAYMENT_AMOUNT}
+            onMintTea={async ({ regionId, tributeMessage, inputCoinType, inputAmount }) => {
+              await mintTeaCollectibleUsdc({
+                itemCode: regionId,
+                tribute: tributeMessage,
+                inputCoinType,
+                inputAmount,
+              });
+            }}
+            onBuyTea={
+              TEA_LISTING_ID
+                ? async ({ inputCoinType, inputAmount }) => {
+                    await buyListingUsdc({
+                      listingId: TEA_LISTING_ID,
+                      inputCoinType,
+                      inputAmount,
+                    });
+                  }
+                : undefined
+            }
           />
         );
       case 'Experience':

@@ -2,6 +2,8 @@
 import React, { useState, useRef } from 'react';
 import GardenWindow from './GardenWindow';
 import ZenLoader from './ZenLoader';
+import PaymentAssetSelector, { type PaymentAssetOption } from './PaymentAssetSelector';
+import { parseDisplayAmountToMinorUnits } from '../chain/paymentAmount';
 
 export interface TeaRegion {
   id: string;
@@ -24,41 +26,127 @@ export const TEA_REGIONS: TeaRegion[] = [
 interface TeaDetailProps {
   collectedTeaIds: string[];
   onUpdateCollection: (ids: string[]) => void;
+  paymentAssets: PaymentAssetOption[];
+  defaultInputCoinType?: string;
+  defaultInputAmount?: string;
+  onMintTea?: (params: {
+    regionId: string;
+    tributeMessage: string;
+    inputCoinType: string;
+    inputAmount: bigint;
+  }) => Promise<void>;
+  onBuyTea?: (params: {
+    regionId: string;
+    inputCoinType: string;
+    inputAmount: bigint;
+  }) => Promise<void>;
 }
 
-const TeaDetail: React.FC<TeaDetailProps> = ({ collectedTeaIds, onUpdateCollection }) => {
+const TeaDetail: React.FC<TeaDetailProps> = ({
+  collectedTeaIds,
+  onUpdateCollection,
+  paymentAssets,
+  defaultInputCoinType,
+  defaultInputAmount = '0.1',
+  onMintTea,
+  onBuyTea,
+}) => {
   const [activeRegion, setActiveRegion] = useState<TeaRegion | null>(null);
   const [isMinting, setIsMinting] = useState(false);
   const [showInquiryModal, setShowInquiryModal] = useState<TeaRegion | null>(null);
   const [showTributeModal, setShowTributeModal] = useState<TeaRegion | null>(null);
   const [tributeMessage, setTributeMessage] = useState("");
+  const [mintError, setMintError] = useState<string | null>(null);
+  const [buyError, setBuyError] = useState<string | null>(null);
+  const [isBuying, setIsBuying] = useState(false);
   const [showPassport, setShowPassport] = useState(false);
   const [pullRatio, setPullRatio] = useState(0); 
+  const [selectedInputCoinType, setSelectedInputCoinType] = useState(
+    defaultInputCoinType ?? paymentAssets[0]?.coinType ?? '',
+  );
+  const [inputAmount, setInputAmount] = useState(defaultInputAmount);
   const cardRef = useRef<HTMLDivElement>(null);
+
+  const resolvePaymentInput = () => {
+    const selectedAsset = paymentAssets.find((asset) => asset.coinType === selectedInputCoinType);
+    if (!selectedAsset) {
+      throw new Error('Selected payment asset is not available.');
+    }
+
+    return {
+      inputCoinType: selectedAsset.coinType,
+      inputAmount: parseDisplayAmountToMinorUnits(inputAmount, selectedAsset.decimals),
+    };
+  };
 
   const handleMint = async (region: TeaRegion) => {
     setShowTributeModal(null);
     setShowInquiryModal(null);
+    setMintError(null);
     setIsMinting(true);
-    // Simulate Blockchain Minting
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    const newCollection = [...collectedTeaIds, region.id];
-    onUpdateCollection(newCollection);
-    
-    setIsMinting(false);
-    setTributeMessage("");
-    setActiveRegion(null);
+    window.dispatchEvent(new CustomEvent('linage-mint-start'));
+    try {
+      const paymentInput = resolvePaymentInput();
+      if (onMintTea) {
+        await onMintTea({
+          regionId: region.id,
+          tributeMessage: tributeMessage.trim(),
+          inputCoinType: paymentInput.inputCoinType,
+          inputAmount: paymentInput.inputAmount,
+        });
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+
+      const newCollection = collectedTeaIds.includes(region.id)
+        ? collectedTeaIds
+        : [...collectedTeaIds, region.id];
+      onUpdateCollection(newCollection);
+      setTributeMessage("");
+      setActiveRegion(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMintError(message);
+    } finally {
+      setIsMinting(false);
+      window.dispatchEvent(new CustomEvent('linage-mint-end'));
+    }
+  };
+
+  const handleBuy = async (region: TeaRegion) => {
+    setBuyError(null);
+    setIsBuying(true);
+    window.dispatchEvent(new CustomEvent('linage-buy-start'));
+    try {
+      if (!onBuyTea) {
+        throw new Error('Tea listing is not configured yet.');
+      }
+      const paymentInput = resolvePaymentInput();
+      await onBuyTea({
+        regionId: region.id,
+        inputCoinType: paymentInput.inputCoinType,
+        inputAmount: paymentInput.inputAmount,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBuyError(message);
+    } finally {
+      setIsBuying(false);
+      window.dispatchEvent(new CustomEvent('linage-buy-end'));
+    }
   };
 
   const handleCardMouseMove = (e: React.MouseEvent) => {
     if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
+    if (rect.height === 0) return;
     const y = (e.clientY - rect.top) / rect.height;
     setPullRatio(Math.max(0, Math.min(y, 1)));
   };
 
   const openInquiry = (region: TeaRegion) => {
+    setMintError(null);
+    setBuyError(null);
     setShowInquiryModal(region);
   };
 
@@ -75,12 +163,25 @@ const TeaDetail: React.FC<TeaDetailProps> = ({ collectedTeaIds, onUpdateCollecti
 
   return (
     <div className="pt-40 min-h-screen bg-[#FAF9F6] px-8 md:px-12 flex flex-col items-center animate-fade-in relative overflow-hidden m-0 p-0">
-      <ZenLoader isLoading={isMinting} message="INSCRIBING HERITAGE ON CHAIN..." />
+      <ZenLoader
+        isLoading={isMinting || isBuying}
+        message={isBuying ? 'SETTLING TEA LISTING ON CHAIN...' : 'INSCRIBING HERITAGE ON CHAIN...'}
+      />
 
       <header className="text-center mb-16 space-y-4">
         <p className="text-[11px] tracking-[0.5em] text-[#D4AF37] uppercase">The Geography of Taste / 茶域图谱</p>
         <h2 className="serif-font text-5xl md:text-6xl italic">The Scent of the Earth</h2>
         <div className="w-24 h-[1px] bg-[#A62C2B]/30 mx-auto" />
+        {mintError && (
+          <p className="text-[11px] tracking-[0.15em] text-[#A62C2B] uppercase max-w-xl mx-auto">
+            Mint failed: {mintError}
+          </p>
+        )}
+        {buyError && (
+          <p className="text-[11px] tracking-[0.15em] text-[#A62C2B] uppercase max-w-xl mx-auto">
+            Purchase failed: {buyError}
+          </p>
+        )}
       </header>
 
       <div className="relative w-full max-w-5xl aspect-[1.4/1] flex items-center justify-center mb-12">
@@ -166,19 +267,41 @@ const TeaDetail: React.FC<TeaDetailProps> = ({ collectedTeaIds, onUpdateCollecti
                     {activeRegion.description}
                   </p>
                   
-                  {collectedTeaIds.includes(activeRegion.id) ? (
+                  {collectedTeaIds.includes(activeRegion.id) && (
                     <div className="text-[9px] tracking-[0.3em] text-[#A62C2B]/60 uppercase border border-[#A62C2B]/20 px-4 py-2 text-center">
                       Verified Heritage
                     </div>
-                  ) : (
+                  )}
+                  {!collectedTeaIds.includes(activeRegion.id) && (
                     <button 
+                      data-testid="tea-mint-button"
                       onClick={() => openInquiry(activeRegion)}
-                      className="bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.5em] px-6 py-4 uppercase shadow-md hover:brightness-110 active:scale-95 transition-all w-full"
+                      disabled={isMinting || isBuying}
+                      className="bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.5em] px-6 py-4 uppercase shadow-md hover:brightness-110 active:scale-95 transition-all w-full disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ clipPath: 'polygon(2% 4%, 98% 2%, 97% 96%, 3% 98%)' }}
                     >
                       藏茶印 / Mint
                     </button>
                   )}
+
+                  <PaymentAssetSelector
+                    assets={paymentAssets}
+                    selectedCoinType={selectedInputCoinType}
+                    amount={inputAmount}
+                    onCoinTypeChange={setSelectedInputCoinType}
+                    onAmountChange={setInputAmount}
+                    disabled={isMinting || isBuying}
+                  />
+
+                  <button
+                    data-testid="tea-buy-button"
+                    onClick={() => handleBuy(activeRegion)}
+                    disabled={isMinting || isBuying || !onBuyTea}
+                    className="w-full border border-[#2D2A26]/20 text-[#2D2A26] text-[10px] tracking-[0.45em] px-6 py-4 uppercase hover:bg-[#2D2A26]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ clipPath: 'polygon(2% 1%, 98% 2%, 97% 99%, 3% 97%)' }}
+                  >
+                    购茶礼 / Buy Listing
+                  </button>
                </div>
             </div>
           </div>
@@ -223,14 +346,17 @@ const TeaDetail: React.FC<TeaDetailProps> = ({ collectedTeaIds, onUpdateCollecti
             <div className="flex flex-col gap-4">
               <button 
                 onClick={acceptTribute}
-                className="w-full py-4 bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.5em] uppercase hover:brightness-110 transition-all"
+                disabled={isMinting || isBuying}
+                className="w-full py-4 bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.5em] uppercase hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ clipPath: 'polygon(1% 3%, 99% 2%, 98% 97%, 2% 98%)' }}
               >
                 Yes, Pay Respects / 敬礼
               </button>
               <button 
+                data-testid="tea-direct-mint-button"
                 onClick={skipTribute}
-                className="w-full py-4 border border-[#2D2A26]/10 text-[#2D2A26] text-[10px] tracking-[0.5em] uppercase hover:bg-[#2D2A26]/5 transition-all"
+                disabled={isMinting || isBuying}
+                className="w-full py-4 border border-[#2D2A26]/10 text-[#2D2A26] text-[10px] tracking-[0.5em] uppercase hover:bg-[#2D2A26]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ clipPath: 'polygon(2% 1%, 98% 2%, 97% 99%, 3% 97%)' }}
               >
                 Direct Mint / 直接铸造
@@ -263,7 +389,8 @@ const TeaDetail: React.FC<TeaDetailProps> = ({ collectedTeaIds, onUpdateCollecti
             />
             <button 
               onClick={() => handleMint(showTributeModal)}
-              className="w-full py-4 bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.5em] uppercase hover:brightness-110 transition-all"
+              disabled={isMinting || isBuying}
+              className="w-full py-4 bg-[#B22222] text-[#FAF9F6] text-[10px] tracking-[0.5em] uppercase hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ clipPath: 'polygon(1% 2%, 99% 1%, 98% 98%, 2% 97%)' }}
             >
               Confirm Inscription / 藏茶印
