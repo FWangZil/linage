@@ -27,7 +27,7 @@ type BuyListingParams = {
   slippage?: number;
 };
 
-function errorMessage(error: unknown): string {
+export function formatLinageChainError(error: unknown): string {
   if (error instanceof Error) {
     if (
       error.message.includes('Identifier("market")') &&
@@ -134,6 +134,6 @@ export function useLinageChain() {
     mintTeaCollectibleUsdc,
     buyListingUsdc,
     getActiveListingByCategory,
-    formatError: errorMessage,
+    formatError: formatLinageChainError,
   };
 }

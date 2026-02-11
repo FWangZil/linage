@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useSpring } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 type CraftId = 'suzhou' | 'shu' | 'qiang';
 
@@ -27,9 +27,9 @@ const CRAFTS: Record<CraftId, CraftMeta> = {
     name: '苏绣',
     subtitle: 'SUZHOU EMBROIDERY',
     fullImage:
-      'https://images.unsplash.com/photo-1596464716127-f2a82984de30?auto=format&fit=crop&w=1800&q=80',
+      '/assets/suzhou_full.png',
     detailImage:
-      'https://images.unsplash.com/photo-1528458965990-428de2f4d2a0?auto=format&fit=crop&w=1600&q=80',
+      '/assets/suzhou_macro_detail.png',
     archive:
       '双面异色与劈丝细针并用，形成近乎雾面渐层的丝光。针脚遵循山水留白逻辑，以极细线束叠加气韵。',
   },
@@ -58,30 +58,27 @@ const CRAFTS: Record<CraftId, CraftMeta> = {
 };
 
 const FRAGMENT_COUNT = 9;
-const STAMP_ANIMATION_MS = 1600;
+const STAMP_ANIMATION_MS = 2500;
 
-const SPRING_SOFT = { type: 'spring', stiffness: 170, damping: 24, mass: 0.9 } as const;
 const SPRING_DAMPED = { type: 'spring', stiffness: 220, damping: 28, mass: 0.9 } as const;
 
+// Polygon shapes for the puzzle fragments to create an "assembled" feel
 const FRAGMENT_SHAPES = [
-  'polygon(6% 8%, 95% 6%, 94% 92%, 8% 94%)',
-  'polygon(4% 3%, 97% 8%, 92% 95%, 5% 89%)',
-  'polygon(7% 5%, 93% 4%, 95% 90%, 11% 96%)',
-  'polygon(5% 10%, 97% 7%, 90% 92%, 4% 88%)',
-  'polygon(9% 5%, 94% 9%, 96% 93%, 8% 96%)',
-  'polygon(3% 7%, 95% 4%, 92% 94%, 9% 91%)',
-  'polygon(8% 9%, 96% 6%, 90% 96%, 6% 89%)',
-  'polygon(5% 5%, 95% 8%, 97% 95%, 7% 90%)',
-  'polygon(10% 6%, 92% 4%, 95% 94%, 6% 95%)',
+  'polygon(0% 0%, 100% 0%, 95% 90%, 5% 95%)',
+  'polygon(5% 0%, 95% 5%, 100% 95%, 0% 100%)',
+  'polygon(2% 5%, 98% 0%, 95% 95%, 5% 100%)',
+  'polygon(5% 5%, 95% 2%, 92% 98%, 8% 95%)',
+  'polygon(0% 2%, 100% 0%, 100% 100%, 0% 98%)',
+  'polygon(5% 0%, 95% 5%, 90% 100%, 10% 95%)',
+  'polygon(0% 5%, 100% 0%, 95% 95%, 5% 100%)',
+  'polygon(5% 2%, 95% 0%, 100% 98%, 0% 100%)',
+  'polygon(2% 0%, 98% 5%, 95% 100%, 5% 95%)',
 ];
 
-const SHARED_THEME_FRAGMENT_IMAGE =
-  'https://images.unsplash.com/photo-1556228578-dd6f3c7c9ed8?auto=format&fit=crop&w=1800&q=80';
-
 const CRAFT_TINT: Record<CraftId, string> = {
-  suzhou: 'rgba(164, 112, 82, 0.32)',
-  shu: 'rgba(128, 65, 52, 0.36)',
-  qiang: 'rgba(90, 70, 56, 0.36)',
+  suzhou: 'rgba(164, 112, 82, 0.25)',
+  shu: 'rgba(128, 65, 52, 0.25)',
+  qiang: 'rgba(90, 70, 56, 0.25)',
 };
 
 function nextCraft(current: CraftId): CraftId {
@@ -101,6 +98,7 @@ export function buildInitialCraftGrid(size = FRAGMENT_COUNT, random: () => numbe
     const randomIdx = Math.floor(random() * (i + 1));
     [shuffled[i], shuffled[randomIdx]] = [shuffled[randomIdx], shuffled[i]];
   }
+  // Ensure it's not already solved
   if (new Set(shuffled).size === 1 && shuffled.length > 1) {
     shuffled[shuffled.length - 1] = nextCraft(shuffled[0]);
   }
@@ -116,34 +114,22 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
   const [fragmentCraftIds, setFragmentCraftIds] = useState<CraftId[]>(
     initialCraftIds ?? buildInitialCraftGrid(),
   );
-  const [minting, setMinting] = useState(false);
-  const [minted, setMinted] = useState(false);
-  const [showStamp, setShowStamp] = useState(false);
-  const [selectedPhysical, setSelectedPhysical] = useState<'studio' | 'museum' | 'collector'>('studio');
-  const timersRef = useRef<number[]>([]);
-  const unlockedRef = useRef(false);
 
-  const [lensPoint, setLensPoint] = useState({ x: 160, y: 120 });
-  const [lensActive, setLensActive] = useState(false);
-  const lensX = useSpring(160, { stiffness: 210, damping: 30, mass: 0.8 });
-  const lensY = useSpring(120, { stiffness: 210, damping: 30, mass: 0.8 });
+  const [gameState, setGameState] = useState<'PLAYING' | 'WON' | 'MINTING' | 'MINTED' | 'ORDER_PHYSICAL'>('PLAYING');
+
+  const [selectedPhysical, setSelectedPhysical] = useState<'studio' | 'museum' | 'collector'>('studio');
 
   const unifiedCraftId = useMemo(() => getUnifiedCraft(fragmentCraftIds), [fragmentCraftIds]);
   const unifiedCraft = unifiedCraftId ? CRAFTS[unifiedCraftId] : null;
 
   useEffect(() => {
-    lensX.set(lensPoint.x);
-    lensY.set(lensPoint.y);
-  }, [lensPoint, lensX, lensY]);
+    if (unifiedCraft && gameState === 'PLAYING') {
+      setGameState('WON');
+    }
+  }, [unifiedCraft, gameState]);
 
-  useEffect(() => {
-    return () => {
-      timersRef.current.forEach((timer) => window.clearTimeout(timer));
-    };
-  }, []);
-
-  const updateFragment = (index: number) => {
-    if (unifiedCraftId) return;
+  const toggleFragment = (index: number) => {
+    if (gameState !== 'PLAYING') return;
     setFragmentCraftIds((current) => {
       const next = [...current];
       next[index] = nextCraft(next[index]);
@@ -152,30 +138,35 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
   };
 
   const handleMint = () => {
-    if (!unifiedCraft || minting) return;
-    setMinting(true);
-    setShowStamp(true);
+    if (gameState !== 'WON') return;
+
+    setGameState('MINTING');
+
+    // Dispatch start event for Header seal sync
     window.dispatchEvent(new Event('linage-mint-start'));
 
-    const mintEndTimer = window.setTimeout(() => {
-      setMinting(false);
-      setMinted(true);
+    setTimeout(() => {
+      setGameState('MINTED');
       window.dispatchEvent(new Event('linage-mint-end'));
-      if (!unlockedRef.current) {
-        unlockedRef.current = true;
-        onMintSuccess?.();
-      }
+      onMintSuccess?.();
     }, STAMP_ANIMATION_MS);
-
-    const stampHideTimer = window.setTimeout(() => {
-      setShowStamp(false);
-    }, STAMP_ANIMATION_MS + 400);
-
-    timersRef.current.push(mintEndTimer, stampHideTimer);
   };
 
   return (
-    <div className="pt-44 px-6 md:px-8 max-w-6xl mx-auto min-h-screen pb-48">
+    <div className="pt-32 px-6 md:px-8 max-w-6xl mx-auto min-h-screen pb-48 relative">
+       {/* SVG Filters for Authentic Seal Effect - Reused from InkSealButton */}
+       <svg className="absolute w-0 h-0" aria-hidden="true">
+        <filter id="cinnabar-roughness-puzzle">
+          <feTurbulence type="fractalNoise" baseFrequency="0.15" numOctaves="4" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        <filter id="ink-bleed-puzzle">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="0.4" result="blur" />
+          <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -8" result="bleed" />
+          <feComposite in="SourceGraphic" in2="bleed" operator="over" />
+        </filter>
+      </svg>
+
       <header className="text-center space-y-6 mb-16 md:mb-20">
         <h2 className="text-5xl md:text-6xl serif-font font-light tracking-tight text-[#2D2A26]">
           绣脉拼图
@@ -185,218 +176,231 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
         </p>
       </header>
 
-      <section className="mb-8 flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4">
-        <button
-          type="button"
-          onClick={onOpenEmbroidery}
-          className="min-w-[260px] border border-[#2D2A26]/20 bg-[#FAF9F6] px-6 py-3 text-[10px] tracking-[0.35em] uppercase hover:border-[#A62C2B]/50 hover:text-[#A62C2B] transition-colors"
-        >
-          EMBROIDERY TRADE / 绣品交易
+      {/* Navigation for context */}
+      <section className="mb-8 flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4 opacity-60 hover:opacity-100 transition-opacity">
+        <button type="button" onClick={onOpenEmbroidery} className="text-[10px] tracking-[0.3em] uppercase hover:text-[#A62C2B] transition-colors pb-1 border-b border-transparent hover:border-[#A62C2B]/30">
+          Embroidery Trade
         </button>
-        <button
-          type="button"
-          onClick={onOpenTea}
-          className="min-w-[260px] border border-[#2D2A26]/20 bg-[#FAF9F6] px-6 py-3 text-[10px] tracking-[0.35em] uppercase hover:border-[#A62C2B]/50 hover:text-[#A62C2B] transition-colors"
-        >
-          TEA SWAP / 茶礼兑换
+        <span className="text-[#2D2A26]/20">/</span>
+        <button type="button" onClick={onOpenTea} className="text-[10px] tracking-[0.3em] uppercase hover:text-[#A62C2B] transition-colors pb-1 border-b border-transparent hover:border-[#A62C2B]/30">
+          Tea Swap
         </button>
       </section>
 
-      <div className="relative border border-[#2D2A26]/12 bg-[#FAF9F6] p-4 md:p-6 shadow-[0_12px_40px_rgba(45,42,38,0.06)]">
-        <div className="absolute inset-0 opacity-[0.04] bg-[url('https://www.transparenttextures.com/patterns/rice-paper-3.png')]" />
-        <div className="relative grid grid-cols-3 gap-3 md:gap-4" data-testid="puzzle-canvas">
+      <div className="relative border border-[#2D2A26]/12 bg-[#FAF9F6] p-4 md:p-8 shadow-[0_20px_60px_rgba(45,42,38,0.05)] max-w-4xl mx-auto">
+        {/* Canvas Texture */}
+        <div className="absolute inset-0 opacity-[0.06] bg-[url('https://www.transparenttextures.com/patterns/rice-paper-3.png')]" />
+
+        {/* Puzzle Grid */}
+        <div className="relative grid grid-cols-3 gap-2 md:gap-3" data-testid="puzzle-canvas">
           {fragmentCraftIds.map((craftId, idx) => {
             const craft = CRAFTS[craftId];
             return (
               <motion.button
-                key={`${idx}-${craftId}`}
+                key={`${idx}-${craftId}`} // Key based on craft to trigger animation on change
                 type="button"
-                data-testid={`puzzle-fragment-${idx}`}
-                aria-label={`Fragment ${idx + 1}: ${craft.subtitle}`}
-                onClick={() => updateFragment(idx)}
-                whileTap={{ scale: unifiedCraftId ? 1 : 0.97 }}
+                onClick={() => toggleFragment(idx)}
+                whileHover={{ scale: gameState === 'PLAYING' ? 1.02 : 1 }}
+                whileTap={{ scale: gameState === 'PLAYING' ? 0.98 : 1 }}
+                layout
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
                 transition={SPRING_DAMPED}
-                className="relative aspect-square border border-[#2D2A26]/20 overflow-hidden text-left"
+                className={`relative aspect-square overflow-hidden cursor-${gameState === 'PLAYING' ? 'pointer' : 'default'} shadow-sm`}
                 style={{
                   clipPath: FRAGMENT_SHAPES[idx],
-                  backgroundImage: `linear-gradient(135deg, ${CRAFT_TINT[craftId]}, rgba(0,0,0,0.2)), url(${SHARED_THEME_FRAGMENT_IMAGE})`,
-                  backgroundSize: '220%',
-                  backgroundPosition: `${(idx % 3) * 45 + 20}% ${Math.floor(idx / 3) * 45 + 20}%`,
                 }}
               >
-                <motion.div
-                  layout
-                  transition={SPRING_SOFT}
-                  className="absolute inset-0 border border-[#FAF9F6]/30"
+                {/* Image Layer */}
+                <div
+                  className="absolute inset-0 transition-transform duration-700 ease-out hover:scale-110"
+                  style={{
+                     backgroundImage: `url(${craft.fullImage})`,
+                     backgroundSize: '300%',
+                     backgroundPosition: `${(idx % 3) * 50}% ${Math.floor(idx / 3) * 50}%` // Approximate positioning
+                  }}
                 />
-                <div className="absolute left-2 bottom-2 text-[#FAF9F6] drop-shadow-lg">
-                  <p className="text-[9px] tracking-[0.22em] uppercase opacity-90">{craft.subtitle}</p>
-                  <p className="serif-font text-sm tracking-[0.08em]">{craft.name}</p>
+
+                {/* Tint Overlay */}
+                <div
+                   className="absolute inset-0 transition-opacity duration-500"
+                   style={{ backgroundColor: CRAFT_TINT[craftId], mixBlendMode: 'multiply' }}
+                />
+
+                {/* Text Label */}
+                <div className="absolute bottom-2 left-3 z-10">
+                   <p className="text-[8px] tracking-[0.2em] text-[#FAF9F6] drop-shadow-md uppercase opacity-80">{craft.name}</p>
                 </div>
               </motion.button>
             );
           })}
         </div>
 
+        {/* Seal Animation Overlay */}
         <AnimatePresence>
-          {showStamp && (
+          {(gameState === 'MINTING' || gameState === 'MINTED') && (
             <motion.div
-              data-testid="mint-stamp-overlay"
-              className="absolute right-8 bottom-8 z-20 pointer-events-none"
-              initial={{ scale: 2.1, rotate: -16, opacity: 0 }}
-              animate={{ scale: 1, rotate: 0, opacity: 1 }}
-              exit={{ scale: 0.94, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 190, damping: 19, mass: 0.85 }}
+              className="absolute bottom-[-20px] right-[-20px] md:bottom-[-40px] md:right-[-40px] z-50 pointer-events-none"
+              initial={{ scale: 3, opacity: 0, rotate: 15 }}
+              animate={{ scale: 1, opacity: 1, rotate: -5 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 20, mass: 1.2 }}
             >
-              <div className="w-28 h-28 rounded-full border-[1.5px] border-[#8F1717] bg-[#B22222]/85 text-[#FAF4E6] flex items-center justify-center shadow-[0_12px_32px_rgba(178,34,34,0.35)]">
-                <span className="serif-font text-sm tracking-[0.22em] uppercase">Seal</span>
+              <div className="relative w-40 h-40 md:w-48 md:h-48 flex items-center justify-center">
+                 {/* Seal Body */}
+                 <div
+                    className="absolute inset-0 bg-[#B22222] opacity-90 shadow-2xl"
+                    style={{
+                      filter: 'url(#cinnabar-roughness-puzzle)',
+                      clipPath: 'polygon(10% 5%, 95% 0%, 100% 90%, 5% 95%)'
+                    }}
+                 />
+                 {/* Seal Inner Border */}
+                 <div
+                    className="absolute inset-3 border-[2px] border-[#FAF9F6]/40"
+                    style={{ filter: 'url(#cinnabar-roughness-puzzle)' }}
+                 />
+                 {/* Seal Text */}
+                 <div className="relative z-10 text-[#FAF4E6] flex flex-col items-center justify-center space-y-1" style={{ filter: 'url(#ink-bleed-puzzle)' }}>
+                     <span className="serif-font text-[10px] tracking-[0.2em] uppercase font-bold text-center leading-tight">INSCRIBED<br/>LEGACY</span>
+                     <div className="w-8 h-[1px] bg-[#FAF4E6]/40 my-1" />
+                     <span className="serif-font text-3xl font-bold tracking-widest">迹</span>
+                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      <section className="mt-8 md:mt-10 text-center">
-        {!unifiedCraft ? (
-          <p className="text-[10px] tracking-[0.38em] uppercase opacity-45">
-            点击碎片切换工艺 · unify all 9 fragments to reveal the complete embroidery
-          </p>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 22 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={SPRING_SOFT}
-            className="space-y-3"
-          >
-            <p className="text-[10px] tracking-[0.38em] uppercase text-[#A62C2B]">
-              Composition Complete · 绣品合成完成
-            </p>
-            <p className="serif-font text-2xl md:text-3xl font-light tracking-tight">
-              {unifiedCraft.name} · Whole Motif Activated
-            </p>
-          </motion.div>
-        )}
-      </section>
-
+      {/* Post-Game Interface */}
       <AnimatePresence>
-        {unifiedCraft && (
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={SPRING_SOFT}
-            className="mt-10 space-y-10"
+        {gameState !== 'PLAYING' && unifiedCraft && (
+          <motion.div
+             initial={{ opacity: 0, y: 40 }}
+             animate={{ opacity: 1, y: 0 }}
+             transition={{ duration: 0.8, ease: "easeOut" }}
+             className="mt-16 space-y-12"
           >
-            <div className="border border-[#2D2A26]/12 p-5 md:p-6 bg-[#FAF9F6]">
-              <div className="w-full aspect-[4/3] md:aspect-[16/7] relative overflow-hidden border border-[#2D2A26]/15">
-                <motion.div
-                  className="absolute inset-0"
-                  initial={{ scale: 1.05, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={SPRING_SOFT}
-                  style={{
-                    backgroundImage: `linear-gradient(125deg, rgba(250,249,246,0.18), rgba(0,0,0,0.12)), url(${unifiedCraft.fullImage})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-              <section className="border border-[#2D2A26]/12 p-5 md:p-6 space-y-5">
-                <h3 className="text-[11px] tracking-[0.36em] uppercase opacity-55">工艺细节 (Details)</h3>
-                <div
-                  className="relative border border-[#2D2A26]/15 overflow-hidden aspect-[4/3]"
-                  onMouseEnter={() => setLensActive(true)}
-                  onMouseLeave={() => setLensActive(false)}
-                  onMouseMove={(event) => {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setLensPoint({
-                      x: event.clientX - rect.left,
-                      y: event.clientY - rect.top,
-                    });
-                  }}
-                  style={{
-                    backgroundImage: `url(${unifiedCraft.detailImage})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                  }}
-                >
-                  <AnimatePresence>
-                    {lensActive && (
-                      <motion.div
-                        className="absolute pointer-events-none border border-[#FAF4E6]/75 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.25)]"
-                        style={{
-                          width: 120,
-                          height: 120,
-                          x: lensX,
-                          y: lensY,
-                          translateX: '-50%',
-                          translateY: '-50%',
-                          backgroundImage: `url(${unifiedCraft.detailImage})`,
-                          backgroundSize: '230%',
-                          backgroundPosition: `${(lensPoint.x / 320) * 100}% ${(lensPoint.y / 240) * 100}%`,
-                        }}
-                        initial={{ opacity: 0, scale: 0.88 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={SPRING_SOFT}
-                      />
-                    )}
-                  </AnimatePresence>
-                </div>
-                <p className="text-sm leading-relaxed opacity-75 serif-font italic">{unifiedCraft.archive}</p>
-              </section>
-
-              <section className="border border-[#2D2A26]/12 p-5 md:p-6 space-y-6">
-                <h3 className="text-[11px] tracking-[0.36em] uppercase opacity-55">Mint &amp; Purchase</h3>
-                <button
-                  type="button"
-                  onClick={handleMint}
-                  disabled={minting}
-                  className="w-full border border-[#A62C2B]/40 py-4 text-xs tracking-[0.34em] uppercase text-[#A62C2B] hover:bg-[#A62C2B] hover:text-[#FAF9F6] transition-colors disabled:opacity-40"
-                >
-                  {minting ? 'MINTING...' : 'MINT NFT'}
-                </button>
-
-                <div className="space-y-3">
-                  <p className="text-[10px] tracking-[0.28em] uppercase opacity-45">ORDER PHYSICAL</p>
-                  <div className="space-y-2">
-                    {[
-                      { id: 'studio', label: 'Studio Framed Edition' },
-                      { id: 'museum', label: 'Museum Mount Scroll' },
-                      { id: 'collector', label: 'Collector Gift Box' },
-                    ].map((option) => (
-                      <label
-                        key={option.id}
-                        className="flex items-center justify-between border border-[#2D2A26]/12 px-3 py-2 text-sm"
-                      >
-                        <span className="serif-font">{option.label}</span>
-                        <input
-                          type="radio"
-                          name="physical-order"
-                          checked={selectedPhysical === option.id}
-                          onChange={() => setSelectedPhysical(option.id as 'studio' | 'museum' | 'collector')}
-                          className="accent-[#A62C2B]"
-                        />
-                      </label>
-                    ))}
+            {/* 1. Craft Details */}
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+               <div className="space-y-6">
+                 <div className="flex items-center gap-4 text-[#A62C2B]">
+                    <div className="w-12 h-[1px] bg-[#A62C2B]" />
+                    <span className="text-[10px] tracking-[0.4em] uppercase">Masterpiece Revealed</span>
+                 </div>
+                 <h3 className="text-4xl serif-font italic text-[#2D2A26]">{unifiedCraft.name}</h3>
+                 <p className="text-sm leading-8 tracking-wide opacity-70 font-light serif-font text-justify">
+                    {unifiedCraft.archive}
+                 </p>
+               </div>
+               <div className="aspect-[4/3] overflow-hidden relative border border-[#2D2A26]/10 shadow-lg group">
+                  <img
+                    src={unifiedCraft.detailImage}
+                    alt="Detail"
+                    className="w-full h-full object-cover transition-transform duration-[3s] group-hover:scale-110"
+                  />
+                  <div className="absolute bottom-4 right-4 bg-[#FAF9F6]/90 px-4 py-2 text-[9px] tracking-[0.2em] uppercase backdrop-blur-sm">
+                    Macro Detail
                   </div>
-                </div>
+               </div>
+            </section>
 
-                {minted && (
-                  <motion.p
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={SPRING_SOFT}
-                    className="text-[10px] tracking-[0.22em] uppercase text-[#A62C2B]"
-                  >
-                    Mint confirmed. Journey record has been updated.
-                  </motion.p>
-                )}
-              </section>
-            </div>
-          </motion.section>
+            {/* 2. Action Area */}
+            <section className="border-t border-[#2D2A26]/10 pt-12 flex flex-col items-center space-y-8">
+
+               {gameState === 'WON' && (
+                 <button
+                   onClick={handleMint}
+                   className="group relative px-12 py-5 bg-[#2D2A26] text-[#FAF9F6] overflow-hidden transition-all hover:bg-[#A62C2B] shadow-xl hover:shadow-[0_10px_30px_rgba(166,44,43,0.3)]"
+                 >
+                   <span className="relative z-10 text-xs tracking-[0.4em] uppercase group-hover:tracking-[0.5em] transition-all duration-500">
+                     Mint Your Legacy
+                   </span>
+                 </button>
+               )}
+
+               {gameState === 'MINTING' && (
+                 <p className="text-[10px] tracking-[0.4em] uppercase animate-pulse text-[#A62C2B]">
+                   Inscribing on Chain...
+                 </p>
+               )}
+
+               {gameState === 'MINTED' && (
+                 <motion.div
+                   initial={{ opacity: 0 }}
+                   animate={{ opacity: 1 }}
+                   className="w-full max-w-xl border border-[#2D2A26]/10 bg-white p-12 shadow-[0_20px_40px_rgba(0,0,0,0.02)] space-y-8 text-center"
+                 >
+                    <div className="space-y-4">
+                       <h4 className="serif-font text-3xl italic text-[#2D2A26]">Legacy Guardian Confirmed</h4>
+                       <div className="w-16 h-[1px] bg-[#D4AF37] mx-auto opacity-50" />
+                       <p className="text-sm text-[#2D2A26]/60 leading-relaxed font-light italic">
+                          Your ownership is now permanent on the chain. <br/>
+                          Would you like to request the hand-crafted physical masterpiece?
+                       </p>
+                    </div>
+
+                    <div className="pt-4">
+                       <button
+                          onClick={() => setGameState('ORDER_PHYSICAL')}
+                          className="w-full py-4 bg-[#2D2A26] text-[#FAF9F6] text-[10px] tracking-[0.4em] uppercase hover:bg-[#A62C2B] transition-colors"
+                       >
+                          Request Physical / 实物 申领
+                       </button>
+                    </div>
+
+                    <button className="text-[9px] tracking-[0.2em] uppercase opacity-30 hover:opacity-100 transition-opacity flex items-center justify-center gap-2 mx-auto">
+                       <span className="w-2 h-2 rounded-full bg-[#A62C2B] animate-pulse" />
+                       Inquiry / 问
+                    </button>
+                 </motion.div>
+               )}
+
+               {gameState === 'ORDER_PHYSICAL' && (
+                 <motion.div
+                   initial={{ opacity: 0, scale: 0.98 }}
+                   animate={{ opacity: 1, scale: 1 }}
+                   className="w-full max-w-xl bg-[#FAF9F6] border border-[#2D2A26]/10 p-8 space-y-6 shadow-inner text-left"
+                 >
+                    <div className="flex justify-between items-center border-b border-[#A62C2B]/20 pb-4 mb-6">
+                        <p className="text-[9px] tracking-[0.3em] uppercase text-[#A62C2B]">
+                            Select Edition / 版本选择
+                        </p>
+                        <button onClick={() => setGameState('MINTED')} className="text-[14px] opacity-40 hover:opacity-100">✕</button>
+                    </div>
+
+                    <div className="space-y-4">
+                    {[
+                        { id: 'studio', label: 'Studio Framed Edition', price: 'Free for Guardians' },
+                        { id: 'museum', label: 'Museum Mount Scroll', price: '+ 200 SUI' },
+                        { id: 'collector', label: 'Collector Gift Box', price: '+ 500 SUI' },
+                    ].map((option) => (
+                        <label
+                            key={option.id}
+                            className={`flex items-center justify-between p-4 border transition-all cursor-pointer ${selectedPhysical === option.id ? 'border-[#A62C2B] bg-[#A62C2B]/[0.02]' : 'border-[#2D2A26]/10 hover:border-[#2D2A26]/30'}`}
+                        >
+                            <div className="flex items-center gap-4">
+                            <input
+                                type="radio"
+                                name="physical"
+                                checked={selectedPhysical === option.id}
+                                onChange={() => setSelectedPhysical(option.id as any)}
+                                className="accent-[#A62C2B]"
+                            />
+                            <span className={`serif-font text-sm ${selectedPhysical === option.id ? 'text-[#A62C2B]' : 'text-[#2D2A26]'}`}>{option.label}</span>
+                            </div>
+                            <span className="text-[9px] tracking-wider opacity-60 uppercase">{option.price}</span>
+                        </label>
+                    ))}
+                    </div>
+
+                    <button className="w-full mt-4 py-4 bg-[#2D2A26] text-[#FAF9F6] text-[10px] tracking-[0.3em] uppercase hover:bg-[#A62C2B] transition-colors">
+                        Proceed to Checkout
+                    </button>
+                 </motion.div>
+               )}
+
+            </section>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:cetus": "vitest run chain/ptb.swap.test.ts hooks/useLinageChain.error.test.ts",
+    "smoke:cetus:testnet": "node scripts/cetus-testnet-smoke.mjs"
   },
   "dependencies": {
     "@cetusprotocol/aggregator-sdk": "^1.1.1",
