@@ -74,11 +74,18 @@ const JourneyNode: React.FC<{ node: typeof NODES[0]; index: number; onAction?: (
 
 interface JourneyPageProps {
   onDiscover?: () => void;
+  achievements?: string[];
 }
 
-const JourneyPage: React.FC<JourneyPageProps> = ({ onDiscover }) => {
+const BASE_RECORDS = [
+  'Entry: Verified first lineage thread',
+  'Entry: Completed provenance witness session',
+];
+
+const JourneyPage: React.FC<JourneyPageProps> = ({ onDiscover, achievements = [] }) => {
   const { scrollYProgress } = useScroll();
   const lineHeight = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
+  const records = [...BASE_RECORDS, ...achievements];
 
   return (
     <div className="relative pt-48 min-h-screen bg-[#FAF9F6] flex flex-col items-center overflow-x-hidden pb-96">
@@ -124,6 +131,25 @@ const JourneyPage: React.FC<JourneyPageProps> = ({ onDiscover }) => {
           ))}
         </div>
       </div>
+
+      <section className="w-full max-w-4xl mt-24 px-8">
+        <div className="border border-[#2D2A26]/10 p-6 md:p-8 bg-[#FAF9F6]">
+          <h3 className="text-[10px] tracking-[0.45em] uppercase opacity-45 mb-6">Journey Records</h3>
+          <div className="space-y-2">
+            {records.map((record, idx) => (
+              <div
+                key={`${record}-${idx}`}
+                className="flex items-center justify-between border border-[#2D2A26]/10 px-4 py-3"
+              >
+                <p className="text-xs md:text-sm serif-font italic opacity-75">{record}</p>
+                <span className="text-[9px] tracking-[0.28em] uppercase opacity-35">
+                  {String(idx + 1).padStart(2, '0')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Decorative End Node */}
       <motion.div 

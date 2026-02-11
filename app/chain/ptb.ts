@@ -4,6 +4,7 @@ import type { SuiClient } from '@mysten/sui/client';
 import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc';
 import { Transaction, type TransactionObjectArgument } from '@mysten/sui/transactions';
 import { getLinageRuntimeConfig } from './runtimeConfig';
+import { ensureSufficientInputBalance } from './swapPrecheck';
 
 type MintCollectibleUsdcParams = {
   owner: string;
@@ -21,6 +22,14 @@ type BuyListingUsdcParams = {
   inputAmount: bigint;
   slippage?: number;
 };
+
+function normalizeCoinType(coinType: string): string {
+  return coinType.trim().toLowerCase();
+}
+
+export function shouldBypassAggregatorSwap(inputCoinType: string, targetCoinType: string): boolean {
+  return normalizeCoinType(inputCoinType) === normalizeCoinType(targetCoinType);
+}
 
 function createAggregatorClient(suiClient: SuiJsonRpcClient) {
   const cfg = getLinageRuntimeConfig();
@@ -69,8 +78,20 @@ async function swapToUsdc(
   slippage: number,
 ): Promise<TransactionObjectArgument> {
   const cfg = getLinageRuntimeConfig();
-  const aggregator = createAggregatorClient(suiClient);
   const coins = await loadAllCoinsOfType(suiClient, owner, inputCoinType);
+  const available = coins.reduce((sum, coin) => sum + coin.balance, 0n);
+  ensureSufficientInputBalance(inputCoinType, available, inputAmount, owner);
+
+  if (shouldBypassAggregatorSwap(inputCoinType, cfg.usdcCoinType)) {
+    if (shouldBypassAggregatorSwap(inputCoinType, '0x2::sui::SUI')) {
+      const [suiCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(inputAmount.toString())]);
+      return suiCoin;
+    }
+
+    return buildInputCoin(tx, coins, inputAmount, inputCoinType).targetCoin;
+  }
+
+  const aggregator = createAggregatorClient(suiClient);
   const inputCoin = buildInputCoin(tx, coins, inputAmount, inputCoinType).targetCoin;
   const router = await aggregator.findRouters({
     from: inputCoinType,

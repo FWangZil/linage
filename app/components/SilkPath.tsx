@@ -112,22 +112,6 @@ const SilkPath: React.FC = () => {
             className="transition-all duration-300 ease-out"
           />
           
-          {/* The Needle Tip */}
-          <motion.g 
-            style={{
-              offsetPath: `path("${SILK_THREAD_PATH}")`,
-              offsetDistance: useTransform(scrollYProgress, p => `${p * 100}%`)
-            }}
-          >
-            <motion.circle 
-              r="1.2" 
-              fill="#D4AF37" 
-              style={{ opacity: 0.8 }}
-              animate={{ r: [1.2, 1.8, 1.2] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            />
-          </motion.g>
-
           {/* Low frequency background sway - another thread slightly offset */}
           <motion.path
             d={SILK_THREAD_PATH}

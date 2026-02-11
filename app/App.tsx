@@ -10,10 +10,12 @@ import EmbroideryDetail from './components/EmbroideryDetail';
 import TeaDetail, { TEA_REGIONS } from './components/TeaDetail';
 import JourneyPage from './components/JourneyPage';
 import ExperiencePage, { EXPERIENCE_DATA } from './components/ExperiencePage';
+import CuratedPuzzle from './components/CuratedPuzzle';
 import type { PaymentAssetOption } from './components/PaymentAssetSelector';
 import { HeritageItem, ActivePage } from './types';
 import { useLinageChain } from './hooks/useLinageChain';
 import { SUI_COIN_TYPE } from './chain/runtimeConfig';
+import type { ActiveListingRef } from './chain/marketplaceIndex';
 
 const HERITAGE_DATA: HeritageItem[] = [
   {
@@ -49,6 +51,30 @@ const EMBROIDERY_LISTING_ID_FALLBACK = import.meta.env.VITE_LINAGE_EMBROIDERY_LI
 const USDC_COIN_TYPE = import.meta.env.VITE_LINAGE_USDC_COIN_TYPE;
 const DEFAULT_PAYMENT_AMOUNT = import.meta.env.VITE_LINAGE_DEFAULT_PAYMENT_AMOUNT || '0.1';
 const DEFAULT_INPUT_COIN_TYPE = import.meta.env.VITE_LINAGE_DEFAULT_INPUT_COIN_TYPE || SUI_COIN_TYPE;
+const JOURNEY_RECORDS_STORAGE_KEY = 'linage_journey_records';
+const STITCH_GUARDIAN_ACHIEVEMENT = 'Achievement Unlocked: Stitch Lineage Guardian';
+
+function withFallbackListing(
+  listing: ActiveListingRef | null,
+  fallbackId: string | undefined,
+  category: number,
+): ActiveListingRef | null {
+  if (listing) return listing;
+  if (!fallbackId) return null;
+  return {
+    listingId: fallbackId,
+    category,
+    askAmount: 0n,
+  };
+}
+
+function buildPaymentAssets(): PaymentAssetOption[] {
+  const assets: PaymentAssetOption[] = [{ label: 'SUI', coinType: SUI_COIN_TYPE, decimals: 9 }];
+  if (USDC_COIN_TYPE && USDC_COIN_TYPE !== SUI_COIN_TYPE) {
+    assets.push({ label: 'USDC', coinType: USDC_COIN_TYPE, decimals: 6 });
+  }
+  return assets;
+}
 
 const App: React.FC = () => {
   const {
@@ -58,7 +84,7 @@ const App: React.FC = () => {
     disconnect,
     mintTeaCollectibleUsdc,
     buyListingUsdc,
-    getActiveListingIdByCategory,
+    getActiveListingByCategory,
     formatError,
   } = useLinageChain();
   const [currentPage, setCurrentPage] = useState<ActivePage>('Home');
@@ -66,14 +92,14 @@ const App: React.FC = () => {
   const [loaderMessage, setLoaderMessage] = useState("");
   const [savedExperienceIds, setSavedExperienceIds] = useState<string[]>([]);
   const [collectedTeaIds, setCollectedTeaIds] = useState<string[]>([]);
-  const [teaListingId, setTeaListingId] = useState<string | null>(TEA_LISTING_ID_FALLBACK ?? null);
-  const [embroideryListingId, setEmbroideryListingId] = useState<string | null>(EMBROIDERY_LISTING_ID_FALLBACK ?? null);
-  const paymentAssets: PaymentAssetOption[] = [
-    { label: 'SUI', coinType: SUI_COIN_TYPE, decimals: 9 },
-    ...(USDC_COIN_TYPE
-      ? [{ label: 'USDC', coinType: USDC_COIN_TYPE, decimals: 6 } as PaymentAssetOption]
-      : []),
-  ];
+  const [teaListing, setTeaListing] = useState<ActiveListingRef | null>(
+    withFallbackListing(null, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY),
+  );
+  const [embroideryListing, setEmbroideryListing] = useState<ActiveListingRef | null>(
+    withFallbackListing(null, EMBROIDERY_LISTING_ID_FALLBACK, EMBROIDERY_CATEGORY),
+  );
+  const [journeyAchievements, setJourneyAchievements] = useState<string[]>([]);
+  const paymentAssets = buildPaymentAssets();
 
   useEffect(() => {
     const savedExp = localStorage.getItem('linage_saved_experiences');
@@ -93,7 +119,27 @@ const App: React.FC = () => {
         console.error("Failed to load tea collection", e);
       }
     }
+
+    const savedJourneyRecords = localStorage.getItem(JOURNEY_RECORDS_STORAGE_KEY);
+    if (savedJourneyRecords) {
+      try {
+        setJourneyAchievements(JSON.parse(savedJourneyRecords));
+      } catch (e) {
+        console.error('Failed to load journey records', e);
+      }
+    }
   }, []);
+
+  const unlockStitchGuardian = () => {
+    setJourneyAchievements((current) => {
+      if (current.includes(STITCH_GUARDIAN_ACHIEVEMENT)) {
+        return current;
+      }
+      const next = [...current, STITCH_GUARDIAN_ACHIEVEMENT];
+      localStorage.setItem(JOURNEY_RECORDS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
 
   const navigateTo = (page: ActivePage) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -133,17 +179,17 @@ const App: React.FC = () => {
   const refreshActiveListings = useCallback(async () => {
     try {
       const [embroideryId, teaId] = await Promise.all([
-        getActiveListingIdByCategory(EMBROIDERY_CATEGORY),
-        getActiveListingIdByCategory(TEA_CATEGORY),
+        getActiveListingByCategory(EMBROIDERY_CATEGORY),
+        getActiveListingByCategory(TEA_CATEGORY),
       ]);
-      setEmbroideryListingId(embroideryId ?? EMBROIDERY_LISTING_ID_FALLBACK ?? null);
-      setTeaListingId(teaId ?? TEA_LISTING_ID_FALLBACK ?? null);
+      setEmbroideryListing(withFallbackListing(embroideryId, EMBROIDERY_LISTING_ID_FALLBACK, EMBROIDERY_CATEGORY));
+      setTeaListing(withFallbackListing(teaId, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY));
     } catch (error) {
       console.error('Failed to load active listings from marketplace index', error);
-      setEmbroideryListingId(EMBROIDERY_LISTING_ID_FALLBACK ?? null);
-      setTeaListingId(TEA_LISTING_ID_FALLBACK ?? null);
+      setEmbroideryListing(withFallbackListing(null, EMBROIDERY_LISTING_ID_FALLBACK, EMBROIDERY_CATEGORY));
+      setTeaListing(withFallbackListing(null, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY));
     }
-  }, [getActiveListingIdByCategory]);
+  }, [getActiveListingByCategory]);
 
   useEffect(() => {
     void refreshActiveListings();
@@ -158,12 +204,14 @@ const App: React.FC = () => {
             defaultInputCoinType={DEFAULT_INPUT_COIN_TYPE}
             defaultInputAmount={DEFAULT_PAYMENT_AMOUNT}
             onBuyEmbroidery={
-              embroideryListingId
+              embroideryListing
                 ? async ({ inputCoinType, inputAmount }) => {
+                    const settledInputAmount =
+                      inputAmount >= embroideryListing.askAmount ? inputAmount : embroideryListing.askAmount;
                     await buyListingUsdc({
-                      listingId: embroideryListingId,
+                      listingId: embroideryListing.listingId,
                       inputCoinType,
-                      inputAmount,
+                      inputAmount: settledInputAmount,
                     });
                     await refreshActiveListings();
                   }
@@ -188,12 +236,13 @@ const App: React.FC = () => {
               });
             }}
             onBuyTea={
-              teaListingId
+              teaListing
                 ? async ({ inputCoinType, inputAmount }) => {
+                    const settledInputAmount = inputAmount >= teaListing.askAmount ? inputAmount : teaListing.askAmount;
                     await buyListingUsdc({
-                      listingId: teaListingId,
+                      listingId: teaListing.listingId,
                       inputCoinType,
-                      inputAmount,
+                      inputAmount: settledInputAmount,
                     });
                     await refreshActiveListings();
                   }
@@ -383,33 +432,19 @@ const App: React.FC = () => {
         );
       case 'Curated':
         return (
-          <div className="pt-48 px-8 max-w-6xl mx-auto min-h-screen pb-64">
-            <header className="text-center mb-40 space-y-6">
-              <h2 className="text-6xl serif-font font-light tracking-tight text-[#2D2A26]">Curated Archive</h2>
-              <p className="text-[10px] tracking-[0.4em] uppercase opacity-40">Verifying the soul of objects</p>
-            </header>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-24 gap-y-32 px-4 md:px-0">
-              {HERITAGE_DATA.slice(0, 2).map(item => {
-                const link = item.id === '1' ? 'Embroidery' : 'Tea';
-                return (
-                  <div key={item.id} className="flex flex-col items-center w-full">
-                    <GardenWindow shape={item.shape} imageUrl={item.imageUrl} title={item.title} subtitle={item.subtitle} className="w-full max-w-md" />
-                    <button 
-                      onClick={() => navigateTo(link as ActivePage)}
-                      className="mt-12 group relative text-[9px] tracking-[0.5em] uppercase pb-2 transition-all"
-                    >
-                      <span className="relative z-10">Trace Provenance / 溯源</span>
-                      <div className="absolute bottom-0 left-0 w-full h-[1px] bg-[#2D2A26]/10" />
-                      <div className="absolute bottom-0 left-0 w-0 h-[1px] bg-[#A62C2B] group-hover:w-full transition-all duration-700" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <CuratedPuzzle
+            onMintSuccess={unlockStitchGuardian}
+            onOpenEmbroidery={() => navigateTo('Embroidery')}
+            onOpenTea={() => navigateTo('Tea')}
+          />
         );
       case 'Journey':
-        return <JourneyPage onDiscover={() => navigateTo('Experience')} />;
+        return (
+          <JourneyPage
+            onDiscover={() => navigateTo('Experience')}
+            achievements={journeyAchievements}
+          />
+        );
       default:
         return (
           <>

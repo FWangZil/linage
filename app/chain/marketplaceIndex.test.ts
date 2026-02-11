@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickFirstListingByCategory } from './marketplaceIndex';
+import { pickFirstActiveListingByCategory, pickFirstListingByCategory } from './marketplaceIndex';
 
 describe('pickFirstListingByCategory', () => {
   it('returns listing object id by category from marketplace parsed fields', () => {
@@ -29,5 +29,37 @@ describe('pickFirstListingByCategory', () => {
     expect(pickFirstListingByCategory(marketplaceFields, 0)).toBe('0xembroidery-listing');
     expect(pickFirstListingByCategory(marketplaceFields, 1)).toBe('0xtea-listing');
     expect(pickFirstListingByCategory(marketplaceFields, 2)).toBeNull();
+  });
+
+  it('supports active_listings entries in move object shape', () => {
+    const marketplaceFields = {
+      active_listings: [
+        {
+          type: '0xpackage::market::ActiveListingRef',
+          fields: {
+            listing: '0xembroidery-listing-real-shape',
+            listing_id: '3',
+            category: 0,
+          },
+        },
+        {
+          type: '0xpackage::market::ActiveListingRef',
+          fields: {
+            listing: '0xtea-listing-real-shape',
+            listing_id: '6',
+            category: 1,
+          },
+        },
+      ],
+    };
+
+    expect(pickFirstListingByCategory(marketplaceFields, 0)).toBe('0xembroidery-listing-real-shape');
+    expect(pickFirstListingByCategory(marketplaceFields, 1)).toBe('0xtea-listing-real-shape');
+
+    expect(pickFirstActiveListingByCategory(marketplaceFields, 0)).toEqual({
+      listingId: '0xembroidery-listing-real-shape',
+      category: 0,
+      askAmount: 0n,
+    });
   });
 });

@@ -10,7 +10,7 @@ import {
 } from '@mysten/dapp-kit';
 import { buildMintCollectibleUsdcTx, buildBuyListingUsdcTx } from '../chain/ptb';
 import { getLinageRuntimeConfig } from '../chain/runtimeConfig';
-import { pickFirstListingByCategory } from '../chain/marketplaceIndex';
+import { pickFirstActiveListingByCategory, type ActiveListingRef } from '../chain/marketplaceIndex';
 
 type MintTeaParams = {
   itemCode: string;
@@ -28,7 +28,16 @@ type BuyListingParams = {
 };
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    if (
+      error.message.includes('Identifier("market")') &&
+      error.message.includes('function_name: Some("buy_listing_internal")') &&
+      error.message.includes('}, 4)')
+    ) {
+      return 'Payment amount is below listing price. Please increase amount and try again.';
+    }
+    return error.message;
+  }
   return String(error);
 }
 
@@ -96,8 +105,8 @@ export function useLinageChain() {
     [currentAccount, signAndExecuteTransaction, suiClient],
   );
 
-  const getActiveListingIdByCategory = useCallback(
-    async (category: number): Promise<string | null> => {
+  const getActiveListingByCategory = useCallback(
+    async (category: number): Promise<ActiveListingRef | null> => {
       const cfg = getLinageRuntimeConfig();
       const result = await suiClient.getObject({
         id: cfg.marketplaceId,
@@ -109,7 +118,7 @@ export function useLinageChain() {
         return null;
       }
 
-      return pickFirstListingByCategory(content.fields, category);
+      return pickFirstActiveListingByCategory(content.fields, category);
     },
     [suiClient],
   );
@@ -124,7 +133,7 @@ export function useLinageChain() {
     disconnect,
     mintTeaCollectibleUsdc,
     buyListingUsdc,
-    getActiveListingIdByCategory,
+    getActiveListingByCategory,
     formatError: errorMessage,
   };
 }
