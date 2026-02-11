@@ -103,6 +103,10 @@ public fun product_sku(product: &ProductNFT): u64 {
     product.sku
 }
 
+public fun product_category(product: &ProductNFT): u8 {
+    product.category
+}
+
 public fun product_is_listable(product: &ProductNFT): bool {
     product.listable
 }

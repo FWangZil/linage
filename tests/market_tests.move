@@ -35,9 +35,20 @@ fun test_list_and_cancel_lifecycle() {
     );
     assert!(market::is_active(&listing), 0);
     assert!(market::ask_amount(&listing) == 1_000_000, 1);
+    assert!(market::active_listing_count_for_testing(&marketplace) == 1, 2);
+    assert!(
+        market::active_listing_category_for_testing(&marketplace, 0) == 0,
+        3
+    );
+    assert!(
+        market::active_listing_object_for_testing(&marketplace, 0)
+            == market::listing_object_for_testing(&listing),
+        4
+    );
 
-    let recovered = market::cancel_listing_internal(&cfg, &merchant_cap, &mut listing);
-    assert!(!market::is_active(&listing), 2);
+    let recovered = market::cancel_listing_internal(&cfg, &mut marketplace, &merchant_cap, &mut listing);
+    assert!(!market::is_active(&listing), 5);
+    assert!(market::active_listing_count_for_testing(&marketplace) == 0, 6);
 
     merchant::destroy_product_for_testing(recovered);
     market::destroy_listing_for_testing(listing);

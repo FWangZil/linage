@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_SUI_NETWORK?: 'testnet' | 'mainnet';
   readonly VITE_LINAGE_PACKAGE_ID?: string;
   readonly VITE_LINAGE_PLATFORM_CONFIG_ID?: string;
+  readonly VITE_LINAGE_MARKETPLACE_ID?: string;
   readonly VITE_LINAGE_COLLECTIBLE_REGISTRY_ID?: string;
   readonly VITE_LINAGE_USDC_COIN_TYPE?: string;
   readonly VITE_CETUS_AGGREGATOR_ENDPOINT?: string;

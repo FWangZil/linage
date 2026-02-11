@@ -16,11 +16,23 @@ const E_INSUFFICIENT_PAYMENT: u64 = 4;
 public struct Marketplace has key {
     id: UID,
     next_listing_id: u64,
+    active_listings: vector<ActiveListingRef>,
+}
+
+public struct ActiveListingRef has copy, drop, store {
+    listing: ID,
+    listing_id: u64,
+    category: u8,
+    merchant: address,
+    merchant_id: u64,
+    sku: u64,
+    ask_amount: u64,
 }
 
 public struct Listing has key {
     id: UID,
     listing_id: u64,
+    category: u8,
     merchant: address,
     merchant_id: u64,
     sku: u64,
@@ -32,6 +44,7 @@ public struct EscrowKey has copy, drop, store {}
 
 public struct Listed has copy, drop {
     listing_id: u64,
+    category: u8,
     merchant: address,
     merchant_id: u64,
     sku: u64,
@@ -55,6 +68,7 @@ fun init(ctx: &mut TxContext) {
     let market = Marketplace {
         id: object::new(ctx),
         next_listing_id: 1,
+        active_listings: vector[],
     };
     transfer::share_object(market);
 }
@@ -75,18 +89,20 @@ public fun list_product(
 #[allow(lint(self_transfer))]
 public fun cancel_listing(
     cfg: &admin::PlatformConfig,
+    market: &mut Marketplace,
     cap: &merchant::MerchantCap,
     listing: &mut Listing,
     ctx: &mut TxContext
 ) {
     merchant::assert_owner(cap, tx_context::sender(ctx));
-    let product = cancel_listing_internal(cfg, cap, listing);
+    let product = cancel_listing_internal(cfg, market, cap, listing);
     transfer::public_transfer(product, tx_context::sender(ctx));
 }
 
 #[allow(lint(self_transfer))]
 public fun buy_listing_usdc<T>(
     cfg: &admin::PlatformConfig,
+    market: &mut Marketplace,
     listing: &mut Listing,
     payment: Coin<T>,
     ctx: &mut TxContext
@@ -94,13 +110,14 @@ public fun buy_listing_usdc<T>(
     admin::assert_stablelayer_disabled(cfg);
     admin::assert_usdc_token<T>(cfg);
     let buyer = tx_context::sender(ctx);
-    let product = buy_listing_internal(cfg, listing, payment, buyer, ctx);
+    let product = buy_listing_internal(cfg, market, listing, payment, buyer, ctx);
     transfer::public_transfer(product, buyer);
 }
 
 #[allow(lint(self_transfer))]
 public fun buy_listing_lusd<T>(
     cfg: &admin::PlatformConfig,
+    market: &mut Marketplace,
     listing: &mut Listing,
     payment: Coin<T>,
     ctx: &mut TxContext
@@ -108,7 +125,7 @@ public fun buy_listing_lusd<T>(
     admin::assert_stablelayer_enabled(cfg);
     admin::assert_lusd_token<T>(cfg);
     let buyer = tx_context::sender(ctx);
-    let product = buy_listing_internal(cfg, listing, payment, buyer, ctx);
+    let product = buy_listing_internal(cfg, market, listing, payment, buyer, ctx);
     transfer::public_transfer(product, buyer);
 }
 
@@ -135,21 +152,37 @@ public(package) fun list_product_internal(
 
     let listing_id = market.next_listing_id;
     market.next_listing_id = listing_id + 1;
+    let category = merchant::product_category(&product);
 
     let mut listing = Listing {
         id: object::new(ctx),
         listing_id,
+        category,
         merchant: merchant::owner(cap),
         merchant_id: merchant::merchant_id(cap),
         sku: merchant::product_sku(&product),
         ask_amount,
         active: true,
     };
+    let listing_object = object::id(&listing);
 
     dof::add(&mut listing.id, EscrowKey {}, product);
+    vector::push_back(
+        &mut market.active_listings,
+        ActiveListingRef {
+            listing: listing_object,
+            listing_id,
+            category,
+            merchant: listing.merchant,
+            merchant_id: listing.merchant_id,
+            sku: listing.sku,
+            ask_amount,
+        },
+    );
 
     event::emit(Listed {
         listing_id,
+        category,
         merchant: listing.merchant,
         merchant_id: listing.merchant_id,
         sku: listing.sku,
@@ -160,6 +193,7 @@ public(package) fun list_product_internal(
 
 public(package) fun cancel_listing_internal(
     cfg: &admin::PlatformConfig,
+    market: &mut Marketplace,
     cap: &merchant::MerchantCap,
     listing: &mut Listing
 ): merchant::ProductNFT {
@@ -169,6 +203,7 @@ public(package) fun cancel_listing_internal(
 
     let product = dof::remove<EscrowKey, merchant::ProductNFT>(&mut listing.id, EscrowKey {});
     listing.active = false;
+    remove_active_listing_index(market, listing.listing_id);
 
     event::emit(Cancelled {
         listing_id: listing.listing_id,
@@ -179,6 +214,7 @@ public(package) fun cancel_listing_internal(
 
 public(package) fun buy_listing_internal<T>(
     cfg: &admin::PlatformConfig,
+    market: &mut Marketplace,
     listing: &mut Listing,
     mut payment: Coin<T>,
     buyer: address,
@@ -207,6 +243,7 @@ public(package) fun buy_listing_internal<T>(
 
     let product = dof::remove<EscrowKey, merchant::ProductNFT>(&mut listing.id, EscrowKey {});
     listing.active = false;
+    remove_active_listing_index(market, listing.listing_id);
 
     event::emit(Purchased {
         listing_id: listing.listing_id,
@@ -218,12 +255,48 @@ public(package) fun buy_listing_internal<T>(
     product
 }
 
+fun remove_active_listing_index(market: &mut Marketplace, listing_id: u64) {
+    let mut i = 0;
+    let len = vector::length(&market.active_listings);
+    while (i < len) {
+        let entry = vector::borrow(&market.active_listings, i);
+        if (entry.listing_id == listing_id) {
+            vector::remove(&mut market.active_listings, i);
+            return
+        };
+        i = i + 1;
+    };
+}
+
 #[test_only]
 public fun new_marketplace_for_testing(ctx: &mut TxContext): Marketplace {
     Marketplace {
         id: object::new(ctx),
         next_listing_id: 1,
+        active_listings: vector[],
     }
+}
+
+#[test_only]
+public fun listing_object_for_testing(listing: &Listing): ID {
+    object::id(listing)
+}
+
+#[test_only]
+public fun active_listing_count_for_testing(market: &Marketplace): u64 {
+    vector::length(&market.active_listings)
+}
+
+#[test_only]
+public fun active_listing_category_for_testing(market: &Marketplace, index: u64): u8 {
+    let entry = vector::borrow(&market.active_listings, index);
+    entry.category
+}
+
+#[test_only]
+public fun active_listing_object_for_testing(market: &Marketplace, index: u64): ID {
+    let entry = vector::borrow(&market.active_listings, index);
+    entry.listing
 }
 
 #[test_only]
@@ -236,6 +309,7 @@ public fun destroy_listing_for_testing(listing: Listing) {
     let Listing {
         id,
         listing_id: _,
+        category: _,
         merchant: _,
         merchant_id: _,
         sku: _,
@@ -250,6 +324,7 @@ public fun destroy_marketplace_for_testing(market: Marketplace) {
     let Marketplace {
         id,
         next_listing_id: _,
+        active_listings: _,
     } = market;
     id.delete();
 }

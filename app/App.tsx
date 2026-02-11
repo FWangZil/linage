@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import SilkPath from './components/SilkPath';
 import GardenWindow from './components/GardenWindow';
 import InkSealButton from './components/InkSealButton';
@@ -42,19 +42,32 @@ const HERITAGE_DATA: HeritageItem[] = [
   }
 ];
 
-const TEA_LISTING_ID = import.meta.env.VITE_LINAGE_TEA_LISTING_ID;
-const EMBROIDERY_LISTING_ID = import.meta.env.VITE_LINAGE_EMBROIDERY_LISTING_ID;
+const EMBROIDERY_CATEGORY = 0;
+const TEA_CATEGORY = 1;
+const TEA_LISTING_ID_FALLBACK = import.meta.env.VITE_LINAGE_TEA_LISTING_ID;
+const EMBROIDERY_LISTING_ID_FALLBACK = import.meta.env.VITE_LINAGE_EMBROIDERY_LISTING_ID;
 const USDC_COIN_TYPE = import.meta.env.VITE_LINAGE_USDC_COIN_TYPE;
 const DEFAULT_PAYMENT_AMOUNT = import.meta.env.VITE_LINAGE_DEFAULT_PAYMENT_AMOUNT || '0.1';
 const DEFAULT_INPUT_COIN_TYPE = import.meta.env.VITE_LINAGE_DEFAULT_INPUT_COIN_TYPE || SUI_COIN_TYPE;
 
 const App: React.FC = () => {
-  const { isConnected, address, connect, disconnect, mintTeaCollectibleUsdc, buyListingUsdc, formatError } = useLinageChain();
+  const {
+    isConnected,
+    address,
+    connect,
+    disconnect,
+    mintTeaCollectibleUsdc,
+    buyListingUsdc,
+    getActiveListingIdByCategory,
+    formatError,
+  } = useLinageChain();
   const [currentPage, setCurrentPage] = useState<ActivePage>('Home');
   const [isLoading, setIsLoading] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState("");
   const [savedExperienceIds, setSavedExperienceIds] = useState<string[]>([]);
   const [collectedTeaIds, setCollectedTeaIds] = useState<string[]>([]);
+  const [teaListingId, setTeaListingId] = useState<string | null>(TEA_LISTING_ID_FALLBACK ?? null);
+  const [embroideryListingId, setEmbroideryListingId] = useState<string | null>(EMBROIDERY_LISTING_ID_FALLBACK ?? null);
   const paymentAssets: PaymentAssetOption[] = [
     { label: 'SUI', coinType: SUI_COIN_TYPE, decimals: 9 },
     ...(USDC_COIN_TYPE
@@ -117,6 +130,25 @@ const App: React.FC = () => {
     localStorage.setItem('linage_tea_passport', JSON.stringify(ids));
   };
 
+  const refreshActiveListings = useCallback(async () => {
+    try {
+      const [embroideryId, teaId] = await Promise.all([
+        getActiveListingIdByCategory(EMBROIDERY_CATEGORY),
+        getActiveListingIdByCategory(TEA_CATEGORY),
+      ]);
+      setEmbroideryListingId(embroideryId ?? EMBROIDERY_LISTING_ID_FALLBACK ?? null);
+      setTeaListingId(teaId ?? TEA_LISTING_ID_FALLBACK ?? null);
+    } catch (error) {
+      console.error('Failed to load active listings from marketplace index', error);
+      setEmbroideryListingId(EMBROIDERY_LISTING_ID_FALLBACK ?? null);
+      setTeaListingId(TEA_LISTING_ID_FALLBACK ?? null);
+    }
+  }, [getActiveListingIdByCategory]);
+
+  useEffect(() => {
+    void refreshActiveListings();
+  }, [refreshActiveListings]);
+
   const renderContent = () => {
     switch (currentPage) {
       case 'Embroidery':
@@ -126,13 +158,14 @@ const App: React.FC = () => {
             defaultInputCoinType={DEFAULT_INPUT_COIN_TYPE}
             defaultInputAmount={DEFAULT_PAYMENT_AMOUNT}
             onBuyEmbroidery={
-              EMBROIDERY_LISTING_ID
+              embroideryListingId
                 ? async ({ inputCoinType, inputAmount }) => {
                     await buyListingUsdc({
-                      listingId: EMBROIDERY_LISTING_ID,
+                      listingId: embroideryListingId,
                       inputCoinType,
                       inputAmount,
                     });
+                    await refreshActiveListings();
                   }
                 : undefined
             }
@@ -155,13 +188,14 @@ const App: React.FC = () => {
               });
             }}
             onBuyTea={
-              TEA_LISTING_ID
+              teaListingId
                 ? async ({ inputCoinType, inputAmount }) => {
                     await buyListingUsdc({
-                      listingId: TEA_LISTING_ID,
+                      listingId: teaListingId,
                       inputCoinType,
                       inputAmount,
                     });
+                    await refreshActiveListings();
                   }
                 : undefined
             }

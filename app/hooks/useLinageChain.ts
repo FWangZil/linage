@@ -9,6 +9,8 @@ import {
   useWallets,
 } from '@mysten/dapp-kit';
 import { buildMintCollectibleUsdcTx, buildBuyListingUsdcTx } from '../chain/ptb';
+import { getLinageRuntimeConfig } from '../chain/runtimeConfig';
+import { pickFirstListingByCategory } from '../chain/marketplaceIndex';
 
 type MintTeaParams = {
   itemCode: string;
@@ -94,6 +96,24 @@ export function useLinageChain() {
     [currentAccount, signAndExecuteTransaction, suiClient],
   );
 
+  const getActiveListingIdByCategory = useCallback(
+    async (category: number): Promise<string | null> => {
+      const cfg = getLinageRuntimeConfig();
+      const result = await suiClient.getObject({
+        id: cfg.marketplaceId,
+        options: { showContent: true },
+      });
+
+      const content = result.data?.content;
+      if (!content || content.dataType !== 'moveObject') {
+        return null;
+      }
+
+      return pickFirstListingByCategory(content.fields, category);
+    },
+    [suiClient],
+  );
+
   return {
     currentAccount,
     isConnected,
@@ -104,6 +124,7 @@ export function useLinageChain() {
     disconnect,
     mintTeaCollectibleUsdc,
     buyListingUsdc,
+    getActiveListingIdByCategory,
     formatError: errorMessage,
   };
 }

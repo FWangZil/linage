@@ -154,7 +154,12 @@ export async function buildBuyListingUsdcTx(
   tx.moveCall({
     target: `${cfg.packageId}::market::buy_listing_usdc`,
     typeArguments: [cfg.usdcCoinType],
-    arguments: [tx.object(cfg.platformConfigId), tx.object(params.listingId), usdcCoin],
+    arguments: [
+      tx.object(cfg.platformConfigId),
+      tx.object(cfg.marketplaceId),
+      tx.object(params.listingId),
+      usdcCoin,
+    ],
   });
 
   return tx;

@@ -4,6 +4,7 @@ export type LinageRuntimeConfig = {
   suiNetwork: 'testnet' | 'mainnet';
   packageId: string;
   platformConfigId: string;
+  marketplaceId: string;
   collectibleRegistryId: string;
   usdcCoinType: string;
   cetusAggregatorEndpoint?: string;
@@ -42,6 +43,7 @@ export function getLinageRuntimeConfig(): LinageRuntimeConfig {
     suiNetwork: network,
     packageId: requireEnv('VITE_LINAGE_PACKAGE_ID'),
     platformConfigId: requireEnv('VITE_LINAGE_PLATFORM_CONFIG_ID'),
+    marketplaceId: requireEnv('VITE_LINAGE_MARKETPLACE_ID'),
     collectibleRegistryId: requireEnv('VITE_LINAGE_COLLECTIBLE_REGISTRY_ID'),
     usdcCoinType: requireEnv('VITE_LINAGE_USDC_COIN_TYPE'),
     cetusAggregatorEndpoint: import.meta.env.VITE_CETUS_AGGREGATOR_ENDPOINT,
