@@ -8,6 +8,7 @@ import {
   useSuiClient,
   useWallets,
 } from '@mysten/dapp-kit';
+import type { Transaction } from '@mysten/sui/transactions';
 import { buildMintCollectibleUsdcTx, buildBuyListingUsdcTx } from '../chain/ptb';
 import { getLinageRuntimeConfig } from '../chain/runtimeConfig';
 import { pickFirstActiveListingByCategory, type ActiveListingRef } from '../chain/marketplaceIndex';
@@ -28,8 +29,28 @@ type BuyListingParams = {
   slippage?: number;
 };
 
+function formatMistToSui(amount: bigint): string {
+  const whole = amount / 1_000_000_000n;
+  const fractionalRaw = (amount % 1_000_000_000n).toString().padStart(9, '0');
+  const fractional = fractionalRaw.replace(/0+$/, '');
+  return fractional.length > 0 ? `${whole}.${fractional}` : `${whole}`;
+}
+
 export function formatLinageChainError(error: unknown): string {
   if (error instanceof Error) {
+    if (error.message.includes('Insufficient SUI balance for Gas Fee')) {
+      return 'Insufficient SUI for gas on the connected account/network. Ensure wallet is on testnet and this address has spendable (not staked) SUI.';
+    }
+    if (error.message.includes('Insufficient sponsored budget for Gas Fee')) {
+      return 'Sponsored gas budget is exhausted. Switch wallet to self-pay gas or top up SUI for gas.';
+    }
+    if (
+      error.message.includes('Identifier("market")') &&
+      error.message.includes('function_name: Some("buy_listing_internal")') &&
+      error.message.includes('}, 2)')
+    ) {
+      return 'This listing is no longer active. Please refresh and choose an available item.';
+    }
     if (
       error.message.includes('Identifier("admin")') &&
       error.message.includes('function_name: Some("assert_usdc_token")') &&
@@ -74,6 +95,30 @@ export function useLinageChain() {
     await disconnectWallet();
   }, [disconnectWallet, isConnected]);
 
+  const signAndExecuteSelfPay = useCallback(
+    async (tx: Transaction, owner: string): Promise<string | null> => {
+      const cfg = getLinageRuntimeConfig();
+      const gasBalance = await suiClient.getBalance({
+        owner,
+        coinType: '0x2::sui::SUI',
+      });
+      const totalBalance = BigInt(gasBalance.totalBalance);
+      if (totalBalance < cfg.defaultTxGasBudget) {
+        throw new Error(
+          `Insufficient SUI for gas. Connected address ${owner} has ${formatMistToSui(totalBalance)} SUI spendable, minimum required is ${formatMistToSui(cfg.defaultTxGasBudget)} SUI.`,
+        );
+      }
+
+      const result = await signAndExecuteTransaction({
+        transaction: tx,
+      });
+      const digest = result.digest ?? null;
+      setLastDigest(digest);
+      return digest;
+    },
+    [signAndExecuteTransaction, suiClient],
+  );
+
   const mintTeaCollectibleUsdc = useCallback(
     async (params: MintTeaParams): Promise<string | null> => {
       if (!currentAccount) {
@@ -88,12 +133,9 @@ export function useLinageChain() {
         inputAmount: params.inputAmount,
         slippage: params.slippage,
       });
-      const result = await signAndExecuteTransaction({ transaction: tx });
-      const digest = 'digest' in result ? result.digest : null;
-      setLastDigest(digest);
-      return digest;
+      return signAndExecuteSelfPay(tx, currentAccount.address);
     },
-    [currentAccount, signAndExecuteTransaction, suiClient],
+    [currentAccount, signAndExecuteSelfPay, suiClient],
   );
 
   const buyListingUsdc = useCallback(
@@ -108,12 +150,9 @@ export function useLinageChain() {
         inputAmount: params.inputAmount,
         slippage: params.slippage,
       });
-      const result = await signAndExecuteTransaction({ transaction: tx });
-      const digest = 'digest' in result ? result.digest : null;
-      setLastDigest(digest);
-      return digest;
+      return signAndExecuteSelfPay(tx, currentAccount.address);
     },
-    [currentAccount, signAndExecuteTransaction, suiClient],
+    [currentAccount, signAndExecuteSelfPay, suiClient],
   );
 
   const getActiveListingByCategory = useCallback(

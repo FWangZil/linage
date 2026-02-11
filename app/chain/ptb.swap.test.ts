@@ -24,6 +24,7 @@ const {
     defaultInputCoinType: '0x2::sui::SUI',
     defaultMintInputAmount: 100000000n,
     defaultSwapSlippage: 0.01,
+    defaultTxGasBudget: 100000000n,
   };
 
   return {
@@ -60,11 +61,17 @@ function mockSuiClient(
   platformConfigObject: Record<string, unknown> | null = null,
 ): SuiJsonRpcClient {
   return {
+    getBalance: vi.fn().mockResolvedValue({
+      coinType: '0x2::sui::SUI',
+      coinObjectCount: 1,
+      totalBalance: balance,
+    }),
     getCoins: vi.fn().mockResolvedValue({
       data: [{ coinType, coinObjectId: `0x${'2'.repeat(64)}`, balance }],
       nextCursor: null,
     }),
     getObject: vi.fn().mockResolvedValue(platformConfigObject),
+    getReferenceGasPrice: vi.fn().mockResolvedValue(1000n),
   } as unknown as SuiJsonRpcClient;
 }
 
@@ -80,9 +87,10 @@ describe('buildBuyListingUsdcTx Cetus routing', () => {
   it('builds tx with Cetus route in normal case', async () => {
     const suiClient = mockSuiClient('200000000');
     findRoutersMock.mockResolvedValue({ paths: [] });
+    const owner = `0x${'4'.repeat(64)}`;
 
     const tx = await buildBuyListingUsdcTx(suiClient, {
-      owner: `0x${'4'.repeat(64)}`,
+      owner,
       listingId: `0x${'5'.repeat(64)}`,
       inputCoinType: '0x2::sui::SUI',
       inputAmount: 100000000n,
@@ -91,6 +99,48 @@ describe('buildBuyListingUsdcTx Cetus routing', () => {
     expect(tx).toBeDefined();
     expect(findRoutersMock).toHaveBeenCalledTimes(1);
     expect(routerSwapMock).toHaveBeenCalledTimes(1);
+    const txData = tx.getData();
+    expect(txData.sender).toBe(owner);
+    expect(txData.gasData.owner).toBe(owner);
+    expect(txData.gasData.budget).toBe('100000000');
+    expect(txData.gasData.price).toBe('1000');
+  });
+
+  it('uses tx.gas split as swap input when input coin is SUI', async () => {
+    const suiClient = mockSuiClient('500000000');
+    findRoutersMock.mockResolvedValue({ paths: [] });
+
+    const tx = await buildBuyListingUsdcTx(suiClient, {
+      owner: `0x${'4'.repeat(64)}`,
+      listingId: `0x${'5'.repeat(64)}`,
+      inputCoinType: '0x2::sui::SUI',
+      inputAmount: 100000000n,
+    });
+
+    expect(buildInputCoinMock).not.toHaveBeenCalled();
+    expect(routerSwapMock).toHaveBeenCalledTimes(1);
+
+    const hasGasSplitCommand = tx.getData().commands.some((command: any) => {
+      if (!('SplitCoins' in command)) return false;
+      const coin = command.SplitCoins.coin;
+      return (coin && '$kind' in coin && coin.$kind === 'GasCoin') || (coin && 'GasCoin' in coin);
+    });
+
+    expect(hasGasSplitCommand).toBe(true);
+  });
+
+  it('checks SUI requirement as input amount plus gas budget for SUI swaps', async () => {
+    const suiClient = mockSuiClient('150000000');
+    findRoutersMock.mockResolvedValue({ paths: [] });
+
+    await expect(
+      buildBuyListingUsdcTx(suiClient, {
+        owner: `0x${'4'.repeat(64)}`,
+        listingId: `0x${'5'.repeat(64)}`,
+        inputCoinType: '0x2::sui::SUI',
+        inputAmount: 100000000n,
+      }),
+    ).rejects.toThrow('Required: 0.2 SUI, available: 0.15 SUI');
   });
 
   it('throws no-route error when Cetus returns null route', async () => {

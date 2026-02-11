@@ -186,4 +186,43 @@ describe('CuratedPuzzle', () => {
       inputAmount: 100000000n,
     });
   });
+
+  it('uses tea checkout fallback when embroidery checkout is unavailable', () => {
+    vi.useFakeTimers();
+    const onBuyTea = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <CuratedPuzzle
+        initialCraftIds={[
+          'suzhou',
+          'suzhou',
+          'suzhou',
+          'suzhou',
+          'suzhou',
+          'suzhou',
+          'suzhou',
+          'suzhou',
+          'suzhou',
+        ]}
+        paymentAssets={[
+          { label: 'SUI', coinType: '0x2::sui::SUI', decimals: 9 },
+          { label: 'USDC', coinType: '0xaaa::usdc::USDC', decimals: 6 },
+        ]}
+        onBuyTea={onBuyTea}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mint Your Legacy' }));
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Request Physical / 实物 申领' }));
+    fireEvent.click(screen.getByTestId('curated-checkout-button'));
+
+    expect(onBuyTea).toHaveBeenCalledTimes(1);
+    expect(onBuyTea).toHaveBeenCalledWith({
+      inputCoinType: '0x2::sui::SUI',
+      inputAmount: 100000000n,
+    });
+  });
 });

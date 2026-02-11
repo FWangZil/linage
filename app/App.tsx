@@ -48,27 +48,11 @@ const HERITAGE_DATA: HeritageItem[] = [
 
 const EMBROIDERY_CATEGORY = 0;
 const TEA_CATEGORY = 1;
-const TEA_LISTING_ID_FALLBACK = import.meta.env.VITE_LINAGE_TEA_LISTING_ID;
-const EMBROIDERY_LISTING_ID_FALLBACK = import.meta.env.VITE_LINAGE_EMBROIDERY_LISTING_ID;
 const USDC_COIN_TYPE = import.meta.env.VITE_LINAGE_USDC_COIN_TYPE;
 const DEFAULT_PAYMENT_AMOUNT = import.meta.env.VITE_LINAGE_DEFAULT_PAYMENT_AMOUNT || '0.1';
 const DEFAULT_INPUT_COIN_TYPE = import.meta.env.VITE_LINAGE_DEFAULT_INPUT_COIN_TYPE || SUI_COIN_TYPE;
 const JOURNEY_RECORDS_STORAGE_KEY = 'linage_journey_records';
 const STITCH_GUARDIAN_ACHIEVEMENT = 'Achievement Unlocked: Stitch Lineage Guardian';
-
-function withFallbackListing(
-  listing: ActiveListingRef | null,
-  fallbackId: string | undefined,
-  category: number,
-): ActiveListingRef | null {
-  if (listing) return listing;
-  if (!fallbackId) return null;
-  return {
-    listingId: fallbackId,
-    category,
-    askAmount: 0n,
-  };
-}
 
 function buildPaymentAssets(): PaymentAssetOption[] {
   const assets: PaymentAssetOption[] = [{ label: 'SUI', coinType: SUI_COIN_TYPE, decimals: 9 }];
@@ -97,12 +81,8 @@ const App: React.FC = () => {
   const [collectedTeaIds, setCollectedTeaIds] = useState<string[]>([]);
   const [profileSnapshot, setProfileSnapshot] = useState<LinageProfileSnapshot | null>(null);
   const [isProfileSyncing, setIsProfileSyncing] = useState(false);
-  const [teaListing, setTeaListing] = useState<ActiveListingRef | null>(
-    withFallbackListing(null, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY),
-  );
-  const [embroideryListing, setEmbroideryListing] = useState<ActiveListingRef | null>(
-    withFallbackListing(null, EMBROIDERY_LISTING_ID_FALLBACK, EMBROIDERY_CATEGORY),
-  );
+  const [teaListing, setTeaListing] = useState<ActiveListingRef | null>(null);
+  const [embroideryListing, setEmbroideryListing] = useState<ActiveListingRef | null>(null);
   const [journeyAchievements, setJourneyAchievements] = useState<string[]>([]);
   const paymentAssets = buildPaymentAssets();
 
@@ -187,12 +167,12 @@ const App: React.FC = () => {
         getActiveListingByCategory(EMBROIDERY_CATEGORY),
         getActiveListingByCategory(TEA_CATEGORY),
       ]);
-      setEmbroideryListing(withFallbackListing(embroideryId, EMBROIDERY_LISTING_ID_FALLBACK, EMBROIDERY_CATEGORY));
-      setTeaListing(withFallbackListing(teaId, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY));
+      setEmbroideryListing(embroideryId);
+      setTeaListing(teaId);
     } catch (error) {
       console.error('Failed to load active listings from marketplace index', error);
-      setEmbroideryListing(withFallbackListing(null, EMBROIDERY_LISTING_ID_FALLBACK, EMBROIDERY_CATEGORY));
-      setTeaListing(withFallbackListing(null, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY));
+      setEmbroideryListing(null);
+      setTeaListing(null);
     }
   }, [getActiveListingByCategory]);
 
@@ -245,12 +225,17 @@ const App: React.FC = () => {
                 ? async ({ inputCoinType, inputAmount }) => {
                     const settledInputAmount =
                       inputAmount >= embroideryListing.askAmount ? inputAmount : embroideryListing.askAmount;
-                    await buyListingUsdc({
-                      listingId: embroideryListing.listingId,
-                      inputCoinType,
-                      inputAmount: settledInputAmount,
-                    });
-                    await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    try {
+                      await buyListingUsdc({
+                        listingId: embroideryListing.listingId,
+                        inputCoinType,
+                        inputAmount: settledInputAmount,
+                      });
+                      await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    } catch (error) {
+                      await refreshActiveListings();
+                      throw new Error(formatError(error));
+                    }
                   }
                 : undefined
             }
@@ -277,12 +262,17 @@ const App: React.FC = () => {
               teaListing
                 ? async ({ inputCoinType, inputAmount }) => {
                     const settledInputAmount = inputAmount >= teaListing.askAmount ? inputAmount : teaListing.askAmount;
-                    await buyListingUsdc({
-                      listingId: teaListing.listingId,
-                      inputCoinType,
-                      inputAmount: settledInputAmount,
-                    });
-                    await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    try {
+                      await buyListingUsdc({
+                        listingId: teaListing.listingId,
+                        inputCoinType,
+                        inputAmount: settledInputAmount,
+                      });
+                      await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    } catch (error) {
+                      await refreshActiveListings();
+                      throw new Error(formatError(error));
+                    }
                   }
                 : undefined
             }
@@ -498,12 +488,36 @@ const App: React.FC = () => {
                 ? async ({ inputCoinType, inputAmount }) => {
                     const settledInputAmount =
                       inputAmount >= embroideryListing.askAmount ? inputAmount : embroideryListing.askAmount;
-                    await buyListingUsdc({
-                      listingId: embroideryListing.listingId,
-                      inputCoinType,
-                      inputAmount: settledInputAmount,
-                    });
-                    await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    try {
+                      await buyListingUsdc({
+                        listingId: embroideryListing.listingId,
+                        inputCoinType,
+                        inputAmount: settledInputAmount,
+                      });
+                      await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    } catch (error) {
+                      await refreshActiveListings();
+                      throw new Error(formatError(error));
+                    }
+                  }
+                : undefined
+            }
+            onBuyTea={
+              teaListing
+                ? async ({ inputCoinType, inputAmount }) => {
+                    const settledInputAmount =
+                      inputAmount >= teaListing.askAmount ? inputAmount : teaListing.askAmount;
+                    try {
+                      await buyListingUsdc({
+                        listingId: teaListing.listingId,
+                        inputCoinType,
+                        inputAmount: settledInputAmount,
+                      });
+                      await Promise.all([refreshActiveListings(), refreshProfile()]);
+                    } catch (error) {
+                      await refreshActiveListings();
+                      throw new Error(formatError(error));
+                    }
                   }
                 : undefined
             }

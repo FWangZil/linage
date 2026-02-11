@@ -14,6 +14,7 @@ type CuratedPuzzleProps = {
   defaultInputCoinType?: string;
   defaultInputAmount?: string;
   onBuyEmbroidery?: (params: { inputCoinType: string; inputAmount: bigint }) => Promise<void>;
+  onBuyTea?: (params: { inputCoinType: string; inputAmount: bigint }) => Promise<void>;
 };
 
 type CraftMeta = {
@@ -120,6 +121,7 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
   defaultInputCoinType,
   defaultInputAmount = '0.1',
   onBuyEmbroidery,
+  onBuyTea,
 }) => {
   const [fragmentCraftIds, setFragmentCraftIds] = useState<CraftId[]>(
     initialCraftIds ?? buildInitialCraftGrid(),
@@ -181,15 +183,16 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
     setIsBuying(true);
     window.dispatchEvent(new CustomEvent('linage-buy-start'));
     try {
-      if (!onBuyEmbroidery) {
-        throw new Error('Embroidery listing is not configured yet.');
+      const checkoutHandler = onBuyEmbroidery ?? onBuyTea;
+      if (!checkoutHandler) {
+        throw new Error('No purchasable listing is configured yet.');
       }
       const selectedAsset = paymentAssets.find((asset) => asset.coinType === selectedInputCoinType);
       if (!selectedAsset) {
         throw new Error('Selected payment asset is not available.');
       }
       const parsedAmount = parseDisplayAmountToMinorUnits(inputAmount, selectedAsset.decimals);
-      await onBuyEmbroidery({
+      await checkoutHandler({
         inputCoinType: selectedAsset.coinType,
         inputAmount: parsedAmount,
       });
@@ -462,7 +465,7 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
                     <button
                       data-testid="curated-checkout-button"
                       onClick={handleCheckout}
-                      disabled={isBuying || !onBuyEmbroidery}
+                      disabled={isBuying || !(onBuyEmbroidery || onBuyTea)}
                       className="w-full mt-4 py-4 bg-[#2D2A26] text-[#FAF9F6] text-[10px] tracking-[0.3em] uppercase hover:bg-[#A62C2B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isBuying ? 'Processing Cetus Swap...' : 'Proceed to Checkout (Cetus Swap)'}

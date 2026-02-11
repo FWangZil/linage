@@ -2,7 +2,7 @@ import BN from 'bn.js';
 import { AggregatorClient, buildInputCoin, Env, type CoinAsset } from '@cetusprotocol/aggregator-sdk';
 import type { SuiJsonRpcClient } from '@mysten/sui/jsonRpc';
 import { Transaction, type TransactionObjectArgument } from '@mysten/sui/transactions';
-import { getLinageRuntimeConfig } from './runtimeConfig';
+import { getLinageRuntimeConfig, SUI_COIN_TYPE } from './runtimeConfig';
 import { ensureSufficientInputBalance } from './swapPrecheck';
 
 type MintCollectibleUsdcParams = {
@@ -37,6 +37,22 @@ type PlatformConfigObjectResponse = {
   };
 };
 
+async function configureSelfPayGas(
+  suiClient: SuiJsonRpcClient,
+  tx: Transaction,
+  owner: string,
+  gasBudget: bigint,
+): Promise<void> {
+  tx.setSender(owner);
+  tx.setGasOwner(owner);
+  tx.setGasBudget(gasBudget);
+  try {
+    tx.setGasPrice(await suiClient.getReferenceGasPrice());
+  } catch {
+    // Fallback to SDK default gas price resolution if RPC is temporarily unavailable.
+  }
+}
+
 function canonicalizeAddress(address: string): string {
   const trimmed = address.trim().toLowerCase();
   if (!trimmed) {
@@ -63,6 +79,30 @@ function canonicalizeCoinType(coinType: string): string {
 
 function normalizeCoinType(coinType: string): string {
   return canonicalizeCoinType(coinType).toLowerCase();
+}
+
+export function selectCoinsForPayment(coins: CoinAsset[], requiredAmount: bigint): CoinAsset[] {
+  const positiveCoins = coins.filter((coin) => coin.balance > 0n);
+  if (positiveCoins.length <= 1) {
+    return positiveCoins;
+  }
+
+  const sorted = [...positiveCoins].sort((a, b) => {
+    if (a.balance === b.balance) return 0;
+    return a.balance > b.balance ? -1 : 1;
+  });
+
+  const selected: CoinAsset[] = [];
+  let sum = 0n;
+  for (const coin of sorted) {
+    selected.push(coin);
+    sum += coin.balance;
+    if (sum >= requiredAmount) {
+      return selected;
+    }
+  }
+
+  return sorted;
 }
 
 export function shouldBypassAggregatorSwap(inputCoinType: string, targetCoinType: string): boolean {
@@ -140,6 +180,7 @@ async function swapToUsdc(
   inputCoinType: string,
   settlementCoinType: string,
   inputAmount: bigint,
+  gasBudget: bigint,
   slippage: number,
 ): Promise<TransactionObjectArgument> {
   const buildInputCoinCompat = buildInputCoin as unknown as (
@@ -149,21 +190,28 @@ async function swapToUsdc(
     coinType: string,
   ) => { targetCoin: TransactionObjectArgument };
 
-  const coins = await loadAllCoinsOfType(suiClient, owner, inputCoinType);
-  const available = coins.reduce((sum, coin) => sum + coin.balance, 0n);
-  ensureSufficientInputBalance(inputCoinType, available, inputAmount, owner);
+  const isSuiInput = shouldBypassAggregatorSwap(inputCoinType, SUI_COIN_TYPE);
+  let inputCoin: TransactionObjectArgument;
+
+  if (isSuiInput) {
+    const suiBalance = await suiClient.getBalance({ owner, coinType: SUI_COIN_TYPE });
+    const available = BigInt(suiBalance.totalBalance);
+    const required = inputAmount + gasBudget;
+    ensureSufficientInputBalance(inputCoinType, available, required, owner);
+    [inputCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(inputAmount.toString())]);
+  } else {
+    const coins = await loadAllCoinsOfType(suiClient, owner, inputCoinType);
+    const available = coins.reduce((sum, coin) => sum + coin.balance, 0n);
+    ensureSufficientInputBalance(inputCoinType, available, inputAmount, owner);
+    const selectedCoins = selectCoinsForPayment(coins, inputAmount);
+    inputCoin = buildInputCoinCompat(tx, selectedCoins, inputAmount, inputCoinType).targetCoin;
+  }
 
   if (shouldBypassAggregatorSwap(inputCoinType, settlementCoinType)) {
-    if (shouldBypassAggregatorSwap(inputCoinType, '0x2::sui::SUI')) {
-      const [suiCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(inputAmount.toString())]);
-      return suiCoin;
-    }
-
-    return buildInputCoinCompat(tx, coins, inputAmount, inputCoinType).targetCoin;
+    return inputCoin;
   }
 
   const aggregator = createAggregatorClient(suiClient);
-  const inputCoin = buildInputCoinCompat(tx, coins, inputAmount, inputCoinType).targetCoin;
   const router = await aggregator.findRouters({
     from: inputCoinType,
     target: settlementCoinType,
@@ -203,6 +251,7 @@ export async function buildMintCollectibleUsdcTx(
   const cfg = getLinageRuntimeConfig();
   const settlementCoinType = await resolveUsdcCoinType(suiClient, cfg.usdcCoinType, cfg.platformConfigId);
   const tx = new Transaction();
+  await configureSelfPayGas(suiClient, tx, params.owner, cfg.defaultTxGasBudget);
 
   const inputCoinType = params.inputCoinType ?? cfg.defaultInputCoinType;
   const inputAmount = params.inputAmount ?? cfg.defaultMintInputAmount;
@@ -215,6 +264,7 @@ export async function buildMintCollectibleUsdcTx(
     inputCoinType,
     settlementCoinType,
     inputAmount,
+    cfg.defaultTxGasBudget,
     slippage,
   );
 
@@ -240,6 +290,7 @@ export async function buildBuyListingUsdcTx(
   const cfg = getLinageRuntimeConfig();
   const settlementCoinType = await resolveUsdcCoinType(suiClient, cfg.usdcCoinType, cfg.platformConfigId);
   const tx = new Transaction();
+  await configureSelfPayGas(suiClient, tx, params.owner, cfg.defaultTxGasBudget);
 
   const inputCoinType = params.inputCoinType ?? cfg.defaultInputCoinType;
   const slippage = params.slippage ?? cfg.defaultSwapSlippage;
@@ -251,6 +302,7 @@ export async function buildBuyListingUsdcTx(
     inputCoinType,
     settlementCoinType,
     params.inputAmount,
+    cfg.defaultTxGasBudget,
     slippage,
   );
 

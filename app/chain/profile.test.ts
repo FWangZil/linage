@@ -13,6 +13,7 @@ vi.mock('./runtimeConfig', () => ({
     defaultInputCoinType: '0x2::sui::SUI',
     defaultMintInputAmount: 100000000n,
     defaultSwapSlippage: 0.01,
+    defaultTxGasBudget: 100000000n,
   }),
 }));
 

@@ -11,6 +11,7 @@ interface ImportMetaEnv {
   readonly VITE_LINAGE_DEFAULT_INPUT_COIN_TYPE?: string;
   readonly VITE_LINAGE_DEFAULT_MINT_INPUT_AMOUNT?: string;
   readonly VITE_LINAGE_DEFAULT_SWAP_SLIPPAGE?: string;
+  readonly VITE_LINAGE_DEFAULT_TX_GAS_BUDGET?: string;
   readonly VITE_LINAGE_TEA_LISTING_ID?: string;
   readonly VITE_LINAGE_EMBROIDERY_LISTING_ID?: string;
   readonly VITE_LINAGE_DEFAULT_PAYMENT_AMOUNT?: string;
