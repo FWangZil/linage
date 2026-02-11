@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import PaymentAssetSelector, { type PaymentAssetOption } from './PaymentAssetSelector';
+import { parseDisplayAmountToMinorUnits } from '../chain/paymentAmount';
 
 type CraftId = 'suzhou' | 'shu' | 'qiang';
 
@@ -8,6 +10,10 @@ type CuratedPuzzleProps = {
   initialCraftIds?: CraftId[];
   onOpenEmbroidery?: () => void;
   onOpenTea?: () => void;
+  paymentAssets?: PaymentAssetOption[];
+  defaultInputCoinType?: string;
+  defaultInputAmount?: string;
+  onBuyEmbroidery?: (params: { inputCoinType: string; inputAmount: bigint }) => Promise<void>;
 };
 
 type CraftMeta = {
@@ -110,6 +116,10 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
   initialCraftIds,
   onOpenEmbroidery,
   onOpenTea,
+  paymentAssets = [],
+  defaultInputCoinType,
+  defaultInputAmount = '0.1',
+  onBuyEmbroidery,
 }) => {
   const [fragmentCraftIds, setFragmentCraftIds] = useState<CraftId[]>(
     initialCraftIds ?? buildInitialCraftGrid(),
@@ -118,9 +128,23 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
   const [gameState, setGameState] = useState<'PLAYING' | 'WON' | 'MINTING' | 'MINTED' | 'ORDER_PHYSICAL'>('PLAYING');
 
   const [selectedPhysical, setSelectedPhysical] = useState<'studio' | 'museum' | 'collector'>('studio');
+  const [selectedInputCoinType, setSelectedInputCoinType] = useState(
+    defaultInputCoinType ?? paymentAssets[0]?.coinType ?? '',
+  );
+  const [inputAmount, setInputAmount] = useState(defaultInputAmount);
+  const [isBuying, setIsBuying] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
 
   const unifiedCraftId = useMemo(() => getUnifiedCraft(fragmentCraftIds), [fragmentCraftIds]);
   const unifiedCraft = unifiedCraftId ? CRAFTS[unifiedCraftId] : null;
+
+  useEffect(() => {
+    if (paymentAssets.length === 0) return;
+    const hasSelectedAsset = paymentAssets.some((asset) => asset.coinType === selectedInputCoinType);
+    if (!hasSelectedAsset) {
+      setSelectedInputCoinType(paymentAssets[0].coinType);
+    }
+  }, [paymentAssets, selectedInputCoinType]);
 
   useEffect(() => {
     if (unifiedCraft && gameState === 'PLAYING') {
@@ -152,8 +176,35 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
     }, STAMP_ANIMATION_MS);
   };
 
+  const handleCheckout = async () => {
+    setBuyError(null);
+    setIsBuying(true);
+    window.dispatchEvent(new CustomEvent('linage-buy-start'));
+    try {
+      if (!onBuyEmbroidery) {
+        throw new Error('Embroidery listing is not configured yet.');
+      }
+      const selectedAsset = paymentAssets.find((asset) => asset.coinType === selectedInputCoinType);
+      if (!selectedAsset) {
+        throw new Error('Selected payment asset is not available.');
+      }
+      const parsedAmount = parseDisplayAmountToMinorUnits(inputAmount, selectedAsset.decimals);
+      await onBuyEmbroidery({
+        inputCoinType: selectedAsset.coinType,
+        inputAmount: parsedAmount,
+      });
+      setGameState('MINTED');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBuyError(message);
+    } finally {
+      setIsBuying(false);
+      window.dispatchEvent(new CustomEvent('linage-buy-end'));
+    }
+  };
+
   return (
-    <div className="pt-32 px-6 md:px-8 max-w-6xl mx-auto min-h-screen pb-48 relative">
+    <div className="pt-44 px-6 md:px-8 max-w-6xl mx-auto min-h-screen pb-48 relative">
        {/* SVG Filters for Authentic Seal Effect - Reused from InkSealButton */}
        <svg className="absolute w-0 h-0" aria-hidden="true">
         <filter id="cinnabar-roughness-puzzle">
@@ -393,8 +444,28 @@ const CuratedPuzzle: React.FC<CuratedPuzzleProps> = ({
                     ))}
                     </div>
 
-                    <button className="w-full mt-4 py-4 bg-[#2D2A26] text-[#FAF9F6] text-[10px] tracking-[0.3em] uppercase hover:bg-[#A62C2B] transition-colors">
-                        Proceed to Checkout
+                    <PaymentAssetSelector
+                      assets={paymentAssets}
+                      selectedCoinType={selectedInputCoinType}
+                      amount={inputAmount}
+                      onCoinTypeChange={setSelectedInputCoinType}
+                      onAmountChange={setInputAmount}
+                      disabled={isBuying}
+                    />
+
+                    {buyError && (
+                      <p className="text-[10px] tracking-[0.12em] uppercase text-[#A62C2B]">
+                        Checkout failed: {buyError}
+                      </p>
+                    )}
+
+                    <button
+                      data-testid="curated-checkout-button"
+                      onClick={handleCheckout}
+                      disabled={isBuying || !onBuyEmbroidery}
+                      className="w-full mt-4 py-4 bg-[#2D2A26] text-[#FAF9F6] text-[10px] tracking-[0.3em] uppercase hover:bg-[#A62C2B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isBuying ? 'Processing Cetus Swap...' : 'Proceed to Checkout (Cetus Swap)'}
                     </button>
                  </motion.div>
                )}

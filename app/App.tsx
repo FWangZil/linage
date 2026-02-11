@@ -436,6 +436,23 @@ const App: React.FC = () => {
             onMintSuccess={unlockStitchGuardian}
             onOpenEmbroidery={() => navigateTo('Embroidery')}
             onOpenTea={() => navigateTo('Tea')}
+            paymentAssets={paymentAssets}
+            defaultInputCoinType={DEFAULT_INPUT_COIN_TYPE}
+            defaultInputAmount={DEFAULT_PAYMENT_AMOUNT}
+            onBuyEmbroidery={
+              embroideryListing
+                ? async ({ inputCoinType, inputAmount }) => {
+                    const settledInputAmount =
+                      inputAmount >= embroideryListing.askAmount ? inputAmount : embroideryListing.askAmount;
+                    await buyListingUsdc({
+                      listingId: embroideryListing.listingId,
+                      inputCoinType,
+                      inputAmount: settledInputAmount,
+                    });
+                    await refreshActiveListings();
+                  }
+                : undefined
+            }
           />
         );
       case 'Journey':
