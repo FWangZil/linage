@@ -60,6 +60,8 @@ export function pickFirstActiveListingByCategory(
   const activeListings = fields.active_listings;
   if (!Array.isArray(activeListings)) return null;
 
+  let selected: ActiveListingRef | null = null;
+
   for (const entry of activeListings) {
     const outer = asRecord(entry) as ActiveListingShape | null;
     if (!outer) continue;
@@ -69,14 +71,18 @@ export function pickFirstActiveListingByCategory(
     const listingObjectId = parseListingObjectId(listing.listing);
     if (!listingObjectId) continue;
     const askAmount = parseAskAmount(listing.ask_amount) ?? 0n;
-    return {
+    const candidate: ActiveListingRef = {
       listingId: listingObjectId,
       category: parsedCategory,
       askAmount,
     };
+
+    if (!selected || candidate.askAmount < selected.askAmount) {
+      selected = candidate;
+    }
   }
 
-  return null;
+  return selected;
 }
 
 export function pickFirstListingByCategory(marketplaceFields: unknown, category: number): string | null {

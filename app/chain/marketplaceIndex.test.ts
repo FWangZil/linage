@@ -62,4 +62,34 @@ describe('pickFirstListingByCategory', () => {
       askAmount: 0n,
     });
   });
+
+  it('prefers the lowest ask amount for the same category', () => {
+    const marketplaceFields = {
+      active_listings: [
+        {
+          fields: {
+            listing: '0xtea-expensive',
+            listing_id: '10',
+            category: 1,
+            ask_amount: '120000000',
+          },
+        },
+        {
+          fields: {
+            listing: '0xtea-cheap',
+            listing_id: '11',
+            category: 1,
+            ask_amount: '100000',
+          },
+        },
+      ],
+    };
+
+    expect(pickFirstListingByCategory(marketplaceFields, 1)).toBe('0xtea-cheap');
+    expect(pickFirstActiveListingByCategory(marketplaceFields, 1)).toEqual({
+      listingId: '0xtea-cheap',
+      category: 1,
+      askAmount: 100000n,
+    });
+  });
 });
