@@ -11,6 +11,7 @@ import {
 import { buildMintCollectibleUsdcTx, buildBuyListingUsdcTx } from '../chain/ptb';
 import { getLinageRuntimeConfig } from '../chain/runtimeConfig';
 import { pickFirstActiveListingByCategory, type ActiveListingRef } from '../chain/marketplaceIndex';
+import { fetchLinageProfileSnapshot, type LinageProfileSnapshot } from '../chain/profile';
 
 type MintTeaParams = {
   itemCode: string;
@@ -29,6 +30,16 @@ type BuyListingParams = {
 
 export function formatLinageChainError(error: unknown): string {
   if (error instanceof Error) {
+    if (
+      error.message.includes('Identifier("admin")') &&
+      error.message.includes('function_name: Some("assert_usdc_token")') &&
+      error.message.includes('}, 7)')
+    ) {
+      return 'Settlement coin configuration mismatch between frontend and on-chain PlatformConfig. Check VITE_LINAGE_USDC_COIN_TYPE or re-register USDC type on-chain.';
+    }
+    if (error.message.includes('Cetus router error 1007:')) {
+      return 'No Cetus route for this pair/amount right now. Try a larger amount or pay with the settlement coin directly.';
+    }
     if (
       error.message.includes('Identifier("market")') &&
       error.message.includes('function_name: Some("buy_listing_internal")') &&
@@ -123,6 +134,13 @@ export function useLinageChain() {
     [suiClient],
   );
 
+  const getProfileSnapshot = useCallback(
+    async (owner: string): Promise<LinageProfileSnapshot> => {
+      return fetchLinageProfileSnapshot(suiClient, owner);
+    },
+    [suiClient],
+  );
+
   return {
     currentAccount,
     isConnected,
@@ -134,6 +152,7 @@ export function useLinageChain() {
     mintTeaCollectibleUsdc,
     buyListingUsdc,
     getActiveListingByCategory,
+    getProfileSnapshot,
     formatError: formatLinageChainError,
   };
 }

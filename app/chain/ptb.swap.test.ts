@@ -54,12 +54,17 @@ vi.mock('@cetusprotocol/aggregator-sdk', async () => {
 
 import { buildBuyListingUsdcTx } from './ptb';
 
-function mockSuiClient(balance: string, coinType = '0x2::sui::SUI'): SuiJsonRpcClient {
+function mockSuiClient(
+  balance: string,
+  coinType = '0x2::sui::SUI',
+  platformConfigObject: Record<string, unknown> | null = null,
+): SuiJsonRpcClient {
   return {
     getCoins: vi.fn().mockResolvedValue({
       data: [{ coinType, coinObjectId: `0x${'2'.repeat(64)}`, balance }],
       nextCursor: null,
     }),
+    getObject: vi.fn().mockResolvedValue(platformConfigObject),
   } as unknown as SuiJsonRpcClient;
 }
 
@@ -146,5 +151,38 @@ describe('buildBuyListingUsdcTx Cetus routing', () => {
     expect(tx).toBeDefined();
     expect(findRoutersMock).not.toHaveBeenCalled();
     expect(routerSwapMock).not.toHaveBeenCalled();
+  });
+
+  it('prefers on-chain settlement coin type when env setting is stale', async () => {
+    runtimeConfig.usdcCoinType = `0x${'e'.repeat(64)}::usdc::USDC`;
+    const suiClient = mockSuiClient('200000000', '0x2::sui::SUI', {
+      data: {
+        content: {
+          dataType: 'moveObject',
+          fields: {
+            usdc_type: {
+              fields: {
+                name: '0000000000000000000000000000000000000000000000000000000000000002::sui::SUI',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const tx = await buildBuyListingUsdcTx(suiClient, {
+      owner: `0x${'4'.repeat(64)}`,
+      listingId: `0x${'5'.repeat(64)}`,
+      inputCoinType: '0x2::sui::SUI',
+      inputAmount: 100000000n,
+    });
+
+    expect(findRoutersMock).not.toHaveBeenCalled();
+    expect(routerSwapMock).not.toHaveBeenCalled();
+
+    const buyCall = tx
+      .getData()
+      .commands.find((command) => 'MoveCall' in command && command.MoveCall.function === 'buy_listing_usdc');
+    expect(buyCall && 'MoveCall' in buyCall ? buyCall.MoveCall.typeArguments : []).toEqual(['0x2::sui::SUI']);
   });
 });

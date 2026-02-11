@@ -17,4 +17,22 @@ describe('formatLinageChainError', () => {
       'Cetus aggregator returned no route.',
     );
   });
+
+  it('maps admin assert_usdc_token abort(7) to config mismatch hint', () => {
+    const err = new Error(
+      'Dry run failed: MoveAbort(MoveLocation { module: ModuleId { address: x, name: Identifier("admin") }, function: 10, instruction: 18, function_name: Some("assert_usdc_token") }, 7) in command 1',
+    );
+
+    expect(formatLinageChainError(err)).toBe(
+      'Settlement coin configuration mismatch between frontend and on-chain PlatformConfig. Check VITE_LINAGE_USDC_COIN_TYPE or re-register USDC type on-chain.',
+    );
+  });
+
+  it('maps Cetus router 1007 to a route/liquidity hint', () => {
+    expect(
+      formatLinageChainError(
+        new Error('Cetus router error 1007: Not found route: liquidity is not enough, path_graph id is none.'),
+      ),
+    ).toBe('No Cetus route for this pair/amount right now. Try a larger amount or pay with the settlement coin directly.');
+  });
 });

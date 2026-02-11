@@ -13,4 +13,13 @@ describe('shouldBypassAggregatorSwap', () => {
   it('returns false for different coin type', () => {
     expect(shouldBypassAggregatorSwap('0x2::sui::SUI', '0x5d4b...::coin::COIN')).toBe(false);
   });
+
+  it('treats short and zero-padded addresses as the same coin type', () => {
+    expect(
+      shouldBypassAggregatorSwap(
+        '0x2::sui::SUI',
+        '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI',
+      ),
+    ).toBe(true);
+  });
 });

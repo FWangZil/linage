@@ -1,6 +1,6 @@
 import BN from 'bn.js';
 import { AggregatorClient, Env } from '@cetusprotocol/aggregator-sdk';
-import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { SuiJsonRpcClient, getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc';
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -19,7 +19,7 @@ function parseAmount(value) {
 }
 
 async function main() {
-  const rpc = process.env.SUI_RPC_URL || getFullnodeUrl('testnet');
+  const rpc = process.env.SUI_RPC_URL || getJsonRpcFullnodeUrl('testnet');
   const endpoint = process.env.CETUS_AGGREGATOR_ENDPOINT;
   const fromCoinType = requiredEnv('FROM_COIN_TYPE');
   const targetCoinType = requiredEnv('TARGET_COIN_TYPE');
@@ -29,7 +29,7 @@ async function main() {
     throw new Error('FROM_COIN_TYPE and TARGET_COIN_TYPE must be different for Cetus route smoke test.');
   }
 
-  const suiClient = new SuiClient({ url: rpc });
+  const suiClient = new SuiJsonRpcClient({ url: rpc });
   const aggregator = new AggregatorClient({
     client: suiClient,
     env: Env.Testnet,

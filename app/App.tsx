@@ -16,6 +16,8 @@ import { HeritageItem, ActivePage } from './types';
 import { useLinageChain } from './hooks/useLinageChain';
 import { SUI_COIN_TYPE } from './chain/runtimeConfig';
 import type { ActiveListingRef } from './chain/marketplaceIndex';
+import type { LinageProfileSnapshot } from './chain/profile';
+import { buildProfileViewModel } from './profile/viewModel';
 
 const HERITAGE_DATA: HeritageItem[] = [
   {
@@ -85,6 +87,7 @@ const App: React.FC = () => {
     mintTeaCollectibleUsdc,
     buyListingUsdc,
     getActiveListingByCategory,
+    getProfileSnapshot,
     formatError,
   } = useLinageChain();
   const [currentPage, setCurrentPage] = useState<ActivePage>('Home');
@@ -92,6 +95,8 @@ const App: React.FC = () => {
   const [loaderMessage, setLoaderMessage] = useState("");
   const [savedExperienceIds, setSavedExperienceIds] = useState<string[]>([]);
   const [collectedTeaIds, setCollectedTeaIds] = useState<string[]>([]);
+  const [profileSnapshot, setProfileSnapshot] = useState<LinageProfileSnapshot | null>(null);
+  const [isProfileSyncing, setIsProfileSyncing] = useState(false);
   const [teaListing, setTeaListing] = useState<ActiveListingRef | null>(
     withFallbackListing(null, TEA_LISTING_ID_FALLBACK, TEA_CATEGORY),
   );
@@ -195,6 +200,38 @@ const App: React.FC = () => {
     void refreshActiveListings();
   }, [refreshActiveListings]);
 
+  const refreshProfile = useCallback(async () => {
+    if (!isConnected || !address) {
+      setProfileSnapshot(null);
+      return;
+    }
+
+    setIsProfileSyncing(true);
+    try {
+      const snapshot = await getProfileSnapshot(address);
+      setProfileSnapshot(snapshot);
+    } catch (error) {
+      console.error('Failed to load profile snapshot from chain', error);
+    } finally {
+      setIsProfileSyncing(false);
+    }
+  }, [address, getProfileSnapshot, isConnected]);
+
+  useEffect(() => {
+    void refreshProfile();
+  }, [refreshProfile]);
+
+  const profileTeaIds = isConnected ? profileSnapshot?.teaItemCodes ?? [] : collectedTeaIds;
+  const totalCollections = isConnected
+    ? (profileSnapshot?.collectibleCount ?? 0) + (profileSnapshot?.productCount ?? 0)
+    : savedExperienceIds.length + collectedTeaIds.length;
+  const profileTitle = isConnected && address ? `${address.slice(0, 10)}...` : 'Guest';
+  const profileViewModel = buildProfileViewModel({
+    isConnected,
+    isProfileSyncing,
+    snapshot: profileSnapshot,
+  });
+
   const renderContent = () => {
     switch (currentPage) {
       case 'Embroidery':
@@ -213,7 +250,7 @@ const App: React.FC = () => {
                       inputCoinType,
                       inputAmount: settledInputAmount,
                     });
-                    await refreshActiveListings();
+                    await Promise.all([refreshActiveListings(), refreshProfile()]);
                   }
                 : undefined
             }
@@ -234,6 +271,7 @@ const App: React.FC = () => {
                 inputCoinType,
                 inputAmount,
               });
+              await refreshProfile();
             }}
             onBuyTea={
               teaListing
@@ -244,7 +282,7 @@ const App: React.FC = () => {
                       inputCoinType,
                       inputAmount: settledInputAmount,
                     });
-                    await refreshActiveListings();
+                    await Promise.all([refreshActiveListings(), refreshProfile()]);
                   }
                 : undefined
             }
@@ -264,11 +302,11 @@ const App: React.FC = () => {
             <header className="mb-24 flex items-end justify-between border-b border-[#2D2A26]/5 pb-12">
               <div className="space-y-4">
                 <span className="text-[10px] tracking-[0.5em] text-[#D4AF37] uppercase">User Profile / 个人主页</span>
-                <h2 className="text-5xl serif-font italic">{address.slice(0, 10)}...</h2>
+                <h2 className="text-5xl serif-font italic">{profileTitle}</h2>
               </div>
               <div className="text-right">
                 <p className="text-[9px] tracking-[0.3em] opacity-30 uppercase mb-2">Total Collections</p>
-                <p className="text-4xl serif-font">{savedExperienceIds.length + collectedTeaIds.length}</p>
+                <p className="text-4xl serif-font">{totalCollections}</p>
               </div>
             </header>
 
@@ -280,15 +318,30 @@ const App: React.FC = () => {
                     <h3 className="text-[11px] tracking-[0.5em] uppercase opacity-40 border-l-2 border-[#A62C2B] pl-4">Tea Collection / 茗赏</h3>
                     <button onClick={() => navigateTo('Tea')} className="text-[9px] tracking-[0.4em] uppercase opacity-40 hover:opacity-100 hover:text-[#A62C2B] transition-all">Explore Regions →</button>
                   </div>
-                  {collectedTeaIds.length === 0 ? (
+                  {profileTeaIds.length === 0 ? (
                     <div className="py-12 px-8 border border-dashed border-[#2D2A26]/10 text-center opacity-30">
                       <p className="text-[10px] tracking-[0.4em] uppercase">No tea mists gathered.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-6">
-                      {collectedTeaIds.map(id => {
+                      {profileTeaIds.map(id => {
                         const tea = TEA_REGIONS.find(t => t.id === id);
-                        if (!tea) return null;
+                        if (!tea) {
+                          return (
+                            <div
+                              key={id}
+                              className="group flex flex-col items-center space-y-4 cursor-pointer"
+                              onClick={() => navigateTo('Tea')}
+                            >
+                              <div className="w-full aspect-square border border-[#2D2A26]/10 flex items-center justify-center bg-[#2D2A26]/[0.02]">
+                                <span className="text-[8px] tracking-[0.2em] uppercase opacity-50 text-center px-2">{id}</span>
+                              </div>
+                              <div className="text-center">
+                                <p className="serif-font text-xs italic">{id}</p>
+                              </div>
+                            </div>
+                          );
+                        }
                         return (
                           <div 
                             key={id} 
@@ -348,16 +401,23 @@ const App: React.FC = () => {
 
                 <section className="space-y-12">
                   <h3 className="text-[11px] tracking-[0.5em] uppercase opacity-40 border-l-2 border-[#A62C2B] pl-4">Active Stamps / 匠心印</h3>
-                  <div className="grid grid-cols-3 md:grid-cols-4 gap-6">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="aspect-square border border-[#2D2A26]/10 flex flex-col items-center justify-center p-4 bg-[#B22222]/[0.02] group hover:bg-[#B22222]/5 transition-all">
-                        <div className="w-10 h-10 border border-[#B22222]/20 flex items-center justify-center mb-3">
-                           <span className="text-[#B22222] text-[10px] font-bold">印</span>
+                  {profileViewModel.stamps.length === 0 ? (
+                    <div className="py-12 px-8 border border-dashed border-[#2D2A26]/10 text-center opacity-30">
+                      <p className="text-[10px] tracking-[0.4em] uppercase">No active stamps on chain.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                      {profileViewModel.stamps.map((stamp) => (
+                        <div key={stamp.id} className="aspect-square border border-[#2D2A26]/10 flex flex-col items-center justify-center p-4 bg-[#B22222]/[0.02] group hover:bg-[#B22222]/5 transition-all text-center">
+                          <div className="w-10 h-10 border border-[#B22222]/20 flex items-center justify-center mb-3">
+                            <span className="text-[#B22222] text-[10px] font-bold">印</span>
+                          </div>
+                          <p className="text-[8px] tracking-[0.2em] uppercase opacity-60">{stamp.label}</p>
+                          <p className="text-[8px] opacity-40 mt-1">{stamp.hint}</p>
                         </div>
-                        <p className="text-[8px] tracking-widest opacity-40 uppercase text-center">Master Cert #{1024 + i}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
               </div>
 
@@ -365,18 +425,12 @@ const App: React.FC = () => {
                 <div className="bg-[#FAF9F6] border border-[#2D2A26]/10 p-8 space-y-10 shadow-sm">
                   <h4 className="text-[10px] tracking-[0.5em] uppercase text-[#A62C2B] font-bold">Active Entitlements</h4>
                   <div className="space-y-8">
-                    <div className="space-y-2">
-                      <p className="text-[10px] tracking-[0.2em] uppercase opacity-40">Preservation Priority</p>
-                      <p className="serif-font text-lg italic">Early access to Pre-Qingming Bi Luo Chun</p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] tracking-[0.2em] uppercase opacity-40">Studio Access</p>
-                      <p className="serif-font text-lg italic">Lifetime workshop pass in Suzhou Old Town</p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] tracking-[0.2em] uppercase opacity-40">Legacy Allocation</p>
-                      <p className="serif-font text-lg italic">Annual quota for custom silk works</p>
-                    </div>
+                    {profileViewModel.entitlements.map((entitlement) => (
+                      <div key={entitlement.title} className="space-y-2">
+                        <p className="text-[10px] tracking-[0.2em] uppercase opacity-40">{entitlement.title}</p>
+                        <p className="serif-font text-lg italic">{entitlement.detail}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 
@@ -384,7 +438,7 @@ const App: React.FC = () => {
                   <h4 className="text-[10px] tracking-[0.4em] uppercase opacity-40">Artifact Status</h4>
                   <div className="flex items-center gap-4">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-[10px] tracking-widest uppercase opacity-60">Synchronized on Chain</span>
+                    <span className="text-[10px] tracking-widest uppercase opacity-60">{profileViewModel.statusLabel}</span>
                   </div>
                 </div>
               </aside>
@@ -449,7 +503,7 @@ const App: React.FC = () => {
                       inputCoinType,
                       inputAmount: settledInputAmount,
                     });
-                    await refreshActiveListings();
+                    await Promise.all([refreshActiveListings(), refreshProfile()]);
                   }
                 : undefined
             }
