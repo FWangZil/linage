@@ -40,6 +40,10 @@ sui move test
 
 ## Testnet Deploy + Seed
 
+> **合约已部署至 Sui Testnet**
+>
+> Package ID: [`0xd2964a77085288b30b21fd1e7e08de38825e336772fa47bdf5a78d20eab19052`](https://suiscan.xyz/testnet/object/0xd2964a77085288b30b21fd1e7e08de38825e336772fa47bdf5a78d20eab19052)
+
 ```bash
 bash scripts/testnet_deploy_seed_and_config.sh
 ```
