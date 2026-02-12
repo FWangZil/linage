@@ -5,9 +5,7 @@ Sui 上的非物质文化遗产 NFT 展示与交易项目。
 
 ## Demo
 
-https://github.com/user-attachments/assets/linage-buy.mp4
-
-<video src="public/linage-buy.mp4" controls width="100%"></video>
+https://github.com/user-attachments/assets/1009aa05-2a18-4b71-a3c5-404f19e6e71f
 
 ## Open Source Statement
 
