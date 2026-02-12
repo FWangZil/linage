@@ -1,20 +1,51 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Frontend (app)
 
-# Run and deploy your AI Studio app
+Linage 前端应用，负责：
+- 钱包连接与链上交互
+- Cetus 路由换币 + USDC/LUSD 结算流程
+- 商品浏览、购买、收藏视图
 
-This contains everything you need to run your app locally.
+## Prerequisites
 
-View your app in AI Studio: https://ai.studio/apps/drive/1ycSOwjrea0-_Flpo-u_ZNT0woJaeVA0V
+- Node.js 18+
+- pnpm 8+
 
-## Run Locally
+## Install
 
-**Prerequisites:**  Node.js
+```bash
+pnpm install
+```
 
+## Configure
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+使用根目录脚本自动生成 `app/.env`：
+
+```bash
+bash ../scripts/testnet_deploy_seed_and_config.sh
+```
+
+或手动填写以下关键变量：
+- `VITE_SUI_NETWORK`
+- `VITE_LINAGE_PACKAGE_ID`
+- `VITE_LINAGE_PLATFORM_CONFIG_ID`
+- `VITE_LINAGE_MARKETPLACE_ID`
+- `VITE_LINAGE_COLLECTIBLE_REGISTRY_ID`
+- `VITE_LINAGE_USDC_COIN_TYPE`
+
+## Run
+
+```bash
+pnpm dev
+```
+
+## Tests
+
+```bash
+pnpm test
+```
+
+## Build
+
+```bash
+pnpm build
+```
