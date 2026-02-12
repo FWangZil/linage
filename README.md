@@ -1,7 +1,13 @@
 # Linage Heritage Curation Platform
 
-Sui 上的非物质文化遗产 NFT 展示与交易项目。  
+Sui 上的非物质文化遗产 NFT 展示与交易项目。
 商家先铸造并上架 `ProductNFT`，用户可浏览、收藏、购买，并支持通过 Cetus 聚合器进行支付资产兑换。
+
+## Demo
+
+https://github.com/user-attachments/assets/linage-buy.mp4
+
+<video src="public/linage-buy.mp4" controls width="100%"></video>
 
 ## Open Source Statement
 
